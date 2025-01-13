@@ -12,6 +12,7 @@ def main():
     parser.add_argument("--model_path", default="louaaron/sedd-medium", type=str)
     parser.add_argument("--dataset", default="wikitext103", type=str)
     parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--length", type=int, default=1024)
     parser.add_argument("--steps", type=int, default=1024)
     args = parser.parse_args()
 
@@ -21,7 +22,7 @@ def main():
     tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
 
     sampling_fn = sampling.get_pc_sampler(
-        graph, noise, (args.batch_size, 1024), 'analytic', args.steps, device=device
+        graph, noise, (args.batch_size, args.length), 'analytic', args.steps, device=device
     )
 
     samples = sampling_fn(model)

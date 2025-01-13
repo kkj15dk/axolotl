@@ -7,7 +7,7 @@ __pycache__
 .DS_Store
 **.pyc
 *.png
-*.txt
+# *.txt
 **/outputs/
 **/wandb/
 **/exp/
@@ -20,3 +20,4 @@ assets/
 core
 **.log
 *.jsonl
+.venv/
