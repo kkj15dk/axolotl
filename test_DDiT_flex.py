@@ -1,8 +1,10 @@
+# %%
 import datetime
 import os
 import os.path
 import gc
 from itertools import chain
+import random
 
 import numpy as np
 import torch
@@ -16,7 +18,7 @@ import sampling
 import graph_lib
 import noise_lib
 import utils
-from model import SEDD
+from model import SEDD_flex
 from model.ema import ExponentialMovingAverage
 from transformers import GPT2TokenizerFast, GPT2LMHeadModel
 
@@ -46,6 +48,23 @@ def run_multiprocess(rank, world_size, cfg, port):
     finally:
         cleanup()
 
+def get_random_batch(cfg):
+    # get random data
+    batch_size = cfg.training.batch_size
+    
+    # Current limitation that the total sequnce length must be divisible by 128
+    sentence_lengths = [random.randint(1, 1024) for _ in range(batch_size - 1)]
+    print("sentence lengths:", sentence_lengths)
+    total = sum(sentence_lengths)
+    sentence_lengths.append(128 - total % 128)
+    total = sum(sentence_lengths)
+    print("actual total:", total)
+
+    ragged_tensors = [torch.randint(0, cfg.tokens, (l,), device="cuda") for l in sentence_lengths]
+    batch = torch.nested.nested_tensor(
+        ragged_tensors, layout=torch.jagged
+    )
+    return batch
 
 def _run(rank, world_size, cfg):
     torch.cuda.set_device(rank)
@@ -87,7 +106,7 @@ def _run(rank, world_size, cfg):
     graph = graph_lib.get_graph(cfg, device)
     
     # build score model
-    score_model = SEDD(cfg).to(device)
+    score_model = SEDD_flex(cfg).to(device)
     score_model = DDP(score_model, device_ids=[rank], static_graph=True, find_unused_parameters=True)
 
     num_parameters = sum(p.numel() for p in score_model.parameters())
@@ -120,14 +139,6 @@ def _run(rank, world_size, cfg):
     # load in tokenizer
     tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
 
-    # Build data iterators
-    train_ds, eval_ds = data.get_dataloaders(cfg)
-
-    # mprint(f"Length of datasets: {len(train_ds)}, {len(eval_ds)}")
-
-    train_iter = iter(train_ds)
-    eval_iter = iter(eval_ds)
-
     # Build one-step training and evaluation functions
     optimize_fn = losses.optimization_manager(cfg)
     train_step_fn = losses.get_step_fn(noise, graph, True, optimize_fn, cfg.training.accum)
@@ -145,11 +156,9 @@ def _run(rank, world_size, cfg):
     while state['step'] < num_train_steps + 1:
         step = state['step']
 
+        batch = get_random_batch(cfg)
+        print("batch shape:", batch.shape)
 
-        if cfg.data.train != "text8":
-            batch = next(train_iter)['input_ids'].to(device)
-        else:
-            batch = next(train_iter).to(device)
         loss = train_step_fn(state, batch)
 
         # flag to see if there was movement ie a full batch got computed
@@ -164,10 +173,8 @@ def _run(rank, world_size, cfg):
                 utils.save_checkpoint(checkpoint_meta_dir, state)
 
             if step % cfg.training.eval_freq == 0:
-                if cfg.data.valid != "text8":
-                    eval_batch = next(eval_iter)['input_ids'].to(device)
-                else:
-                    eval_batch = next(train_iter).to(device)
+                    
+                eval_batch = get_random_batch(cfg)
                 eval_loss = eval_step_fn(state, eval_batch)
 
                 dist.all_reduce(eval_loss)
@@ -221,3 +228,57 @@ def _run(rank, world_size, cfg):
                             del eval_model, logits, loss
 
                     dist.barrier()
+
+
+# %%
+"""Training and evaluation"""
+
+import hydra
+import os
+import numpy as np
+import utils
+import torch.multiprocessing as mp
+from hydra.core.hydra_config import HydraConfig
+from hydra.types import RunMode
+from omegaconf import OmegaConf, open_dict
+
+@hydra.main(version_base=None, config_path="configs", config_name="config")
+def main(cfg):
+    ngpus = cfg.ngpus
+    if "load_dir" in cfg:
+        hydra_cfg_path = os.path.join(cfg.load_dir, ".hydra/hydra.yaml")
+        hydra_cfg = OmegaConf.load(hydra_cfg_path).hydra
+
+        cfg = utils.load_hydra_config_from_run(cfg.load_dir)
+        
+        work_dir = cfg.work_dir
+        utils.makedirs(work_dir)
+    else:
+        hydra_cfg = HydraConfig.get()
+        work_dir = hydra_cfg.run.dir if hydra_cfg.mode == RunMode.RUN else os.path.join(hydra_cfg.sweep.dir, hydra_cfg.sweep.subdir)
+        utils.makedirs(work_dir)
+
+    with open_dict(cfg):
+        cfg.ngpus = ngpus
+        cfg.work_dir = work_dir
+        cfg.wandb_name = os.path.basename(os.path.normpath(work_dir))
+
+	# Run the training pipeline
+    port = int(np.random.randint(10000, 20000))
+    logger = utils.get_logger(os.path.join(work_dir, "logs"))
+
+    hydra_cfg = HydraConfig.get()
+    if hydra_cfg.mode != RunMode.RUN:
+        logger.info(f"Run id: {hydra_cfg.job.id}")
+
+    try:
+        mp.set_start_method("forkserver")
+        mp.spawn(run_multiprocess, args=(ngpus, cfg, port), nprocs=ngpus, join=True)
+    except Exception as e:
+        logger.critical(e, exc_info=True)
+
+
+if __name__ == "__main__":
+    main()
+
+

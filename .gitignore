@@ -21,3 +21,4 @@ core
 **.log
 *.jsonl
 .venv/
+datasets/*

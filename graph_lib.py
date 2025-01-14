@@ -137,7 +137,7 @@ class Uniform(Graph):
         return self.rate(i)
 
     def transition(self, i, sigma):
-        trans = torch.ones(*i.shape, self.dim, device=i.device) * (1 - (-sigma[..., None]).exp()) / self.dim
+        trans: torch.Tensor = torch.ones(*i.shape, self.dim, device=i.device) * (1 - (-sigma[..., None]).exp()) / self.dim
         trans = trans.scatter(-1, i[..., None], torch.zeros_like(trans))
         trans = trans.scatter(-1, i[..., None], 1 - trans.sum(dim=-1, keepdim=True))
         return trans
@@ -147,6 +147,8 @@ class Uniform(Graph):
 
     def sample_transition(self, i, sigma):
         move_chance = 1 - (-sigma).exp()
+        if i.is_nested:
+            raise NotImplementedError("Nested tensors not supported yet")
         move_indices = torch.rand(*i.shape, device=i.device) < move_chance
         i_pert = torch.where(move_indices, torch.randint_like(i, self.dim), i)
         return i_pert
@@ -160,7 +162,7 @@ class Uniform(Graph):
         return torch.randint(0, self.dim, batch_dims)
 
     def score_entropy(self, score, sigma, x, x0):
-        esigm1 = torch.where(
+        esigm1 = torch.where( # more precise, compute differently for sigma under 0.5, than for over 0.5. (exp(sigma) - 1)
             sigma < 0.5,
             torch.expm1(sigma),
             torch.exp(sigma) - 1
@@ -189,7 +191,7 @@ class Uniform(Graph):
         return pos_term - neg_term + const
 
 
-class Absorbing(Graph):
+class Absorbing(Graph): #  we exponentiate (which maintains positivity) to be beneficial to avoid numerical errors and also found that scaling by e^σ − 1 helps for absorbing diffusion
     def __init__(self, dim):
         super().__init__()
         self._dim = dim
@@ -225,10 +227,42 @@ class Absorbing(Graph):
         )[..., None]
         return edge
 
-    def sample_transition(self, i, sigma):
+    def sample_transition(self, i: torch.Tensor, sigma):
         move_chance = 1 - (-sigma).exp()
-        move_indices = torch.rand(*i.shape, device=i.device) < move_chance
-        i_pert = torch.where(move_indices, self.dim - 1, i)
+        # print("move_chance", move_chance)
+        if i.is_nested:
+            print("Nested")
+            # # Handle nested tensors
+            # for t in i.unbind():
+            #     print("i", t.shape)
+            move_indices_list = [
+                torch.rand(len, device=i.device) < mc.item() for len, mc in zip(i.offsets().diff(), move_chance.unbind())
+            ]
+            # print("move_indices_list", move_indices_list)
+            move_indices = torch.nested.nested_tensor(
+                move_indices_list, layout=torch.jagged
+            )
+            # print("move_indices", move_indices)
+            # for t in i.unbind():
+            #     print("i", t.shape)
+            # for t in move_indices.unbind():
+            #     print("move_indices", t.shape)
+
+            # TODO: for some reason masked_fill does not work, even though i and move_indices are the same shape
+            # i_pert = i.masked_fill(move_indices, self.dim - 1)
+            # Usng where instead
+
+            i_pert = torch.nested.nested_tensor([
+                torch.where(mi, self.dim - 1, t) for mi, t in zip(move_indices.unbind(), i.unbind())
+            ], layout=torch.jagged)
+            
+            # print("i_pert", i_pert)
+            # for t in i_pert.unbind():
+            #     print("i_pert", t.shape)
+        else:
+            # Handle regular tensors
+            move_indices = torch.rand(*i.shape, device=i.device) < move_chance
+            i_pert = torch.where(move_indices, self.dim - 1, i)
         return i_pert
     
     def staggered_score(self, score, dsigma):
@@ -243,7 +277,7 @@ class Absorbing(Graph):
 
     def score_entropy(self, score, sigma, x, x0):
         rel_ind = x == self.dim - 1
-        esigm1 = torch.where(
+        esigm1 = torch.where( # more precise, compute differently for sigma under 0.5, than for over 0.5. (exp(sigma) - 1)
             sigma < 0.5,
             torch.expm1(sigma),
             torch.exp(sigma) - 1

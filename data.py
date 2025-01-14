@@ -1,6 +1,6 @@
 import re
 from transformers import GPT2TokenizerFast
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 from itertools import chain
 import numpy as np
 import torch
@@ -126,7 +126,8 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
     elif name == "lambada":
         dataset = get_lambada_test_dataset()
     else:
-        dataset = load_dataset(name, cache_dir=cache_dir)
+        # dataset = load_dataset(name, cache_dir=cache_dir)
+        dataset = load_from_disk(name)
 
     if name == "lambada":
         data = dataset
