@@ -12,21 +12,37 @@ class Rotary(torch.nn.Module):
         self.sin_cached = None
         self.max_len = max_len
 
-    def forward(self, x):
-        seq_len = self.max_len
-        if seq_len != self.seq_len_cached:
-            self.seq_len_cached = seq_len
-            t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
-            freqs = torch.einsum("i,j->ij", t, self.inv_freq.clone())
-            emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
-            # dims are: batch, seq_len, qkv, head, dim
-            self.cos_cached = emb.cos()[None, :, None, None, :].repeat(1,1,3,1,1)
-            self.sin_cached = emb.sin()[None, :, None, None, :].repeat(1,1,3,1,1)
-            # This makes the transformation on v an identity.
-            self.cos_cached[:,:,2,:,:].fill_(1.)
-            self.sin_cached[:,:,2,:,:].fill_(0.)
-
+    def get_cos_sin(self, x, seq_len):
+        t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
+        freqs = torch.einsum("i,j->ij", t, self.inv_freq.clone())
+        emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
+        # dims are: batch, seq_len, qkv, head, dim
+        self.cos_cached = emb.cos()[None, :, None, None, :]
+        self.sin_cached = emb.sin()[None, :, None, None, :]
+        # This makes the transformation on v an identity.
+        self.cos_cached[:,:,2,:,:].fill_(1.)
+        self.sin_cached[:,:,2,:,:].fill_(0.)
         return self.cos_cached, self.sin_cached
+
+    def forward(self, x):
+        if x.is_nested:
+            seq_lens = x.offsets().diff().tolist()
+            cos_sin_list = [self.get_cos_sin(x, seq_len) for seq_len in seq_lens]
+        else:
+            cos_sin_list = [self.get_cos_sin(x, x.shape[1])]
+        # if seq_len != self.seq_len_cached:
+        #     self.seq_len_cached = seq_len
+        #     t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
+        #     freqs = torch.einsum("i,j->ij", t, self.inv_freq.clone())
+        #     emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
+        #     # dims are: batch, seq_len, qkv, head, dim
+        #     self.cos_cached = emb.cos()[None, :, None, None, :].repeat(1,1,3,1,1)
+        #     self.sin_cached = emb.sin()[None, :, None, None, :].repeat(1,1,3,1,1)
+        #     # This makes the transformation on v an identity.
+        #     self.cos_cached[:,:,2,:,:].fill_(1.)
+        #     self.sin_cached[:,:,2,:,:].fill_(0.)
+
+        return cos_sin_list
 
 
 def rotate_half(x):

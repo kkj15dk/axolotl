@@ -318,7 +318,7 @@ class SEDD_flex(nn.Module, PyTorchModelHubMixin):
         ])
         assert config.model.hidden_size % config.model.n_heads == 0, "Hidden size must be divisible by number of heads."
         self.attention_head_dim = config.model.hidden_size // config.model.n_heads
-        self.rotary_emb = rotary.Rotary(config.model.hidden_size // config.model.n_heads, max_len=config.model.length)
+        self.rotary_emb = rotary.Rotary(config.model.hidden_size // config.model.n_heads)
 
         self.output_layer = DDitFinalLayer(config.model.hidden_size, vocab_size, config.model.cond_dim)
         self.scale_by_sigma = config.model.scale_by_sigma
@@ -343,6 +343,7 @@ class SEDD_flex(nn.Module, PyTorchModelHubMixin):
         c = F.silu(self.sigma_map(sigma))
 
         rotary_cos_sin = self.rotary_emb(x)
+        print(rotary_cos_sin.shape)
 
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
             for i in range(len(self.blocks)):
