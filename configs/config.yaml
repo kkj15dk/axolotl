@@ -11,9 +11,9 @@ training:
   batch_size: 4
   accum: 1
   n_iters: 1300001
-  snapshot_freq: 50000
-  log_freq: 50
-  eval_freq: 100
+  snapshot_freq: 10 # 50000
+  log_freq: 10 # 50
+  eval_freq: 10 # 100
   snapshot_freq_for_preemption: 10000
   weight: standard
   snapshot_sampling: True
@@ -40,7 +40,7 @@ sampling:
   noise_removal: True
 
 eval:
-  batch_size: 512
+  batch_size: 4
   perplexity: True
   perplexity_batch_size: 32
 

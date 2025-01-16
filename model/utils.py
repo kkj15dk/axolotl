@@ -45,6 +45,8 @@ def get_score_fn(model, train=False, sampling=False):
         def score_fn(x, sigma):
             sigma = sigma.reshape(-1)
             score = model_fn(x, sigma)
+            print("score", score)
+            print(score.shape)
             
             if sampling:
                 # when sampling return true score (not log used for training)

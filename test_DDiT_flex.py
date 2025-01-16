@@ -59,8 +59,9 @@ def get_random_batch(cfg):
     sentence_lengths.append(128 - total % 128)
     total = sum(sentence_lengths)
     print("actual total:", total)
-
-    ragged_tensors = [torch.randint(0, cfg.tokens, (l,), device="cuda") for l in sentence_lengths]
+    
+    start = [random.randint(0, cfg.tokens - l) for l in sentence_lengths]
+    ragged_tensors = [torch.arange(start[i], start[i] + l, device="cuda") for i, l in enumerate(sentence_lengths)]
     batch = torch.nested.nested_tensor(
         ragged_tensors, layout=torch.jagged
     )

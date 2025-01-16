@@ -16,46 +16,55 @@ from functools import lru_cache, partial
 from einops import rearrange
 from huggingface_hub import PyTorchModelHubMixin
 from omegaconf import OmegaConf
+from .nested_utils import (
+    flatten_nested_tensor,
+    expand_using_offsets,
+)
 
 from . import rotary
-from .fused_add_dropout_scale import (
-    bias_dropout_add_scale_fused_train, 
-    bias_dropout_add_scale_fused_inference, 
-    get_bias_dropout_add_scale, 
-    # modulate_fused,
-)
+# from .fused_add_dropout_scale import (
+#     bias_dropout_add_scale_fused_train, 
+#     bias_dropout_add_scale_fused_inference, 
+#     get_bias_dropout_add_scale, 
+#     # modulate_fused,
+# )
+
+import torch._dynamo
+
+# Disable DDP optimizer, error with flex_attention
+torch._dynamo.config.optimize_ddp = False
 
 # Flex attention functions
 
-# Define the modulate function
-def modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
-    if x.is_nested:
-        # Convert shift and scale to nested tensors
-        shift_nested = torch.nested.nested_tensor([sh.expand_as(t) for t, sh in zip(x.unbind(), shift.unbind())])
-        scale_nested = torch.nested.nested_tensor([sc.expand_as(t) for t, sc in zip(x.unbind(), scale.unbind())])
+# # Define the modulate function
+# def modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+#     if x.is_nested:
+#         # Convert shift and scale to nested tensors
+#         if shift is not None:
+#             shift_nested = torch.nested.nested_tensor([sh.expand_as(t) for t, sh in zip(x.unbind(), shift.unbind())])
+#         scale_nested = torch.nested.nested_tensor([sc.expand_as(t) for t, sc in zip(x.unbind(), scale.unbind())])
         
-        # Apply modulation using broadcasting
-        print("Nested")
-        print(x.shape)
-        print(scale_nested.shape)
-        print(shift_nested.shape)
+#         # Apply modulation using broadcasting
+#         print("Nested")
+#         print(x.shape)
+#         print(scale_nested.shape)
+#         print(shift_nested.shape)
 
-        return x * (1 + scale_nested) + shift_nested
-    else:
-        raise NotImplementedError("I sould make sure this still works")
-        return x * (1 + scale) + shift
+#         return x * (1 + scale_nested) + shift_nested
+#     else:
+#         raise NotImplementedError("I sould make sure this still works")
+#         return x * (1 + scale) + shift
 
-def modulate_fused(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
-    return modulate(x, shift, scale)
+def modulate_fused(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor, offsets = None) -> torch.Tensor:
+    return modulate(x, shift, scale, offsets)
 
 @lru_cache
 def create_block_mask_cached(mask_mod, B, H, M, N, device="cuda"):
     block_mask = create_block_mask(mask_mod, B, H, M, N, device=device)
     return block_mask
 
-def build_seq_idx(tensor: torch.Tensor):
-    offsets = tensor.offsets()
-    total_length = tensor.offsets()[-1].item()
+def build_seq_idx(offsets):
+    total_length = offsets[-1].item()
     # Create a range tensor from 0 to total_length
     range_tensor = torch.arange(total_length, device="cuda", dtype=torch.int32)
 
@@ -99,8 +108,38 @@ def residual_linear(x, W, x_skip, residual_scale):
     ).view(*x.shape[:-1], dim_out)
 
 
-def modulate(x, shift, scale):
-    return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
+def modulate(x: torch.Tensor, shift, scale, offsets=None):
+    # print("before modulate")
+    # print(x[0])
+    # scale = torch.tensor(0.5).repeat(x.shape[0], x.shape[-1]).to(x.device)
+    # print(scale.shape)
+
+    # Split the flattened tensor into segments based on offsets
+    if offsets is None:
+        if scale is not None:
+            x = x * (1 + scale.to(x.dtype))
+
+        if shift is not None:
+            x = x + shift.to(x.dtype)
+        return x
+
+    sizes = offsets.diff().tolist()
+    segments = x.split(sizes)
+    
+    # Apply scale and shift to each segment
+    modulated_segments = []
+    for i, segment in enumerate(segments):
+        if scale is not None:
+            modulated_segment = segment * (1 + scale[i])
+        if shift is not None:
+            modulated_segment = segment + shift[i]
+        modulated_segments.append(modulated_segment)
+    
+    # Concatenate the modulated segments back into a single tensor
+    modulated_tensor = torch.cat(modulated_segments, dim=0)
+    
+    return modulated_tensor
+
 
 #################################################################################
 #               Embedding Layers for Timesteps and Class Labels                 #
@@ -178,7 +217,7 @@ class DDiTBlock(nn.Module):
         self.norm1 = nn.LayerNorm([dim])
         self.attn_qkv = nn.Linear(dim, 3 * dim, bias=False)
         self.attn_out = nn.Linear(dim, dim, bias=False)
-        self.dropout1 = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout)
 
         self.norm2 = nn.LayerNorm([dim])
         self.mlp = nn.Sequential(
@@ -186,83 +225,121 @@ class DDiTBlock(nn.Module):
             nn.GELU(approximate="tanh"),
             nn.Linear(mlp_ratio * dim, dim, bias=True)
         )
-        self.dropout2 = nn.Dropout(dropout)
-
-        self.dropout = dropout
-        
 
         self.adaLN_modulation = nn.Linear(cond_dim, 6 * dim, bias=True)
         self.adaLN_modulation.weight.data.zero_()
         self.adaLN_modulation.bias.data.zero_()
 
 
-    def _get_bias_dropout_scale(self):
-        return (
-            bias_dropout_add_scale_fused_train
-            if self.training
-            else bias_dropout_add_scale_fused_inference
-        )
+    # def _get_bias_dropout_scale(self):
+    #     return (
+    #         bias_dropout_add_scale_fused_train
+    #         if self.training
+    #         else bias_dropout_add_scale_fused_inference
+    #     )
 
 
-    def forward(self, x, rotary_cos_sin, c):
+    def forward(self, x, rotary_cos_sin, c, block_mask, offsets):
         # batch_size, seq_len = x.shape[0], x.shape[1]
 
-        bias_dropout_scale_fn = self._get_bias_dropout_scale()
-        ada_out = self.adaLN_modulation(c)
-        print(ada_out.shape)
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = ada_out.chunk(6, dim=-1)
+        # bias_dropout_scale_fn = self._get_bias_dropout_scale()
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).unsqueeze(1).chunk(6, dim=-1)
+        # print("AdaLN shapes")
+        # print(shift_msa.shape, scale_msa.shape, gate_msa.shape, shift_mlp.shape, scale_mlp.shape, gate_mlp.shape)
 
         # attention operation
-        print("X1")
-        print(x.shape)
+        # print("X1")
+        # print(x.shape)
         x_skip = x
-        x = modulate_fused(self.norm1(x), shift_msa, scale_msa)
+        x = modulate_fused(self.norm1(x), shift_msa, scale_msa, offsets = offsets)
         # dtype0 = x.dtype
 
-        print("X2")
-        print(x.shape)
+        # print("X2")
+        # print(x.shape)
         qkv = self.attn_qkv(x)
-        qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
-        with torch.amp.autocast('cuda', enabled=False):
-            cos, sin = rotary_cos_sin
-            qkv = rotary.apply_rotary_pos_emb(
-                qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
-            )
-        query, key, value = rearrange(qkv, 'b s (h d) -> b s h d', h=self.n_heads).chunk(3, dim=-1)
-        
-        print("Query2")
-        print(query.shape)
-        
-        # Build the seq_idx lookup table, and the block mask
-        seq_idx, total_length = build_seq_idx(query)
-        mask_mod_njt = create_njt_wrapper(seq_idx)
 
-        block_mask = create_block_mask_cached(
-            mask_mod_njt, 1, 1, total_length, total_length, device=query.device
-        )
+        if offsets is not None:
+            # rearrange qkv
+            qkv = rearrange(qkv, 's (three h d) -> s three h d', three=3, h=self.n_heads)
+            # print("qkv is nested")
+            # for triple_vec, (cos, sin) in zip(qkv.unbind(), rotary_cos_sin):
+            #     print("test_rotary_input")
+            #     print(triple_vec.unsqueeze(0).shape)
+            #     print(cos.shape)
+            #     print(sin.shape)
+            # time1 = timeit.default_timer()
+            with torch.amp.autocast('cuda', enabled=False):
+                segments = qkv.split(offsets.diff().tolist())
+                qkv = torch.cat([rotary.apply_rotary_pos_emb(triple_vec.unsqueeze(0), cos.to(triple_vec.dtype), sin.to(triple_vec.dtype)).squeeze(0) for triple_vec, (cos, sin) in zip(segments, rotary_cos_sin)], 
+                                dim = 0
+                )
+
+            # time2 = timeit.default_timer()
+            # print("Time to rotate: ", time2 - time1)
+            # for t in qkv.unbind():
+            #     print(t.shape)
+        else:
+            # rearrange qkv
+            qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
+
+            with torch.amp.autocast('cuda', enabled=False):
+
+                cos, sin = rotary_cos_sin
+                qkv = rotary.apply_rotary_pos_emb(
+                    qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
+                )
+
+        query, key, value = qkv.chunk(3, dim=-3) # returns (batch_size * seq_len, 1, n_heads, attention_head_dim)
+        
+        # TODO: Make sure this is the correct permutation
+        query = query.permute(1, 2, 0, 3)
+        key = key.permute(1, 2, 0, 3)
+        value = value.permute(1, 2, 0, 3)
+
+        # print("Query2")
+        # print(query.shape)
+        
         x = flex_attention(
-                query.view(1, -1, self.n_heads, self.attention_head_dim).transpose(1, 2),
-                key.view(1, -1, self.n_heads, self.attention_head_dim).transpose(1, 2),
-                value.view(1, -1, self.n_heads, self.attention_head_dim).transpose(1, 2),
+                query,
+                key,
+                value,
                 block_mask=block_mask,
-        ) # returns (1, n_heads, seq_len, attention_head_dim)
-        x = rearrange(x, '1 n s d -> 1 s (n d)')
+        ) # returns (1, n_heads, seq_len*batch_size, attention_head_dim)
+        x = rearrange(x, '1 n s d -> s (n d)')
+
         # x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
 
-        x = bias_dropout_scale_fn(self.attn_out(x), None, gate_msa, x_skip, self.dropout)
+        # print("x, x_skip")
+        # print(x.shape)
+        # print(x_skip.shape)
+
+        # # Restore the nested tensor
+        # x = restore_nested_tensor(x, x_skip, verbose=True)
+
+        ##
+        x = modulate_fused(self.attn_out(x), None, gate_msa, offsets=offsets)
+        x = self.dropout(x) + x_skip
+        # Instead of:
+        # x = bias_dropout_scale_fn(self.attn_out(x), None, gate_msa, x_skip, self.dropout)
+        ##
+
 
         # mlp operation
-        x = bias_dropout_scale_fn(self.mlp(modulate_fused(self.norm2(x), shift_mlp, scale_mlp)), None, gate_mlp, x, self.dropout)
+        ##
+        x_skip = x
+        x = modulate_fused(self.norm2(x), shift_mlp, scale_mlp, offsets=offsets)
+        x = self.mlp(x)
+        x = modulate_fused(x, None, gate_mlp, offsets=offsets)
+        x = self.dropout(x) + x_skip
+        # instead of:
+        # x = bias_dropout_scale_fn(self.mlp(modulate_fused(self.norm2(x), shift_mlp, scale_mlp)), None, gate_mlp, x, self.dropout)
+        ##
         return x
 
 
 
 class EmbeddingLayer(nn.Module):
     def __init__(self, dim, vocab_dim):
-        """
-        Mode arg: 0 -> use a learned layer, 1 -> use eigenvectors, 
-        2-> add in eigenvectors, 3 -> use pretrained embedding matrix
-        """
         super().__init__()
         self.embedding = nn.Parameter(torch.empty((vocab_dim, dim)))
         torch.nn.init.kaiming_uniform_(self.embedding, a=math.sqrt(5))
@@ -270,10 +347,12 @@ class EmbeddingLayer(nn.Module):
     def forward(self, x):
         if x.is_nested:
             # Handle nested tensors
-            return torch.nested.nested_tensor([self.embedding[t] for t in x.unbind()], layout=torch.jagged)
+            embedded_tensors = [self.embedding[t] for t in x.unbind()]
+            flat_embedded_tensor = torch.cat(embedded_tensors, dim=0)
+            return flat_embedded_tensor, x.offsets()
         else:
             # Handle regular tensors
-            return self.embedding[x]
+            return self.embedding[x], None
 
 
 class DDitFinalLayer(nn.Module):
@@ -281,18 +360,27 @@ class DDitFinalLayer(nn.Module):
         super().__init__()
         self.norm_final = nn.LayerNorm([hidden_size])
         self.linear = nn.Linear(hidden_size, out_channels)
-        self.linear.weight.data.zero_()
-        self.linear.bias.data.zero_()
+        # self.linear.weight.data.zero_() # TODO: I don't know why these where intialized to 0
+        # self.linear.bias.data.zero_() # TODO: I don't know why these where intialized to 0
 
         self.adaLN_modulation = nn.Linear(cond_dim, 2 * hidden_size, bias=True)
         self.adaLN_modulation.weight.data.zero_()
         self.adaLN_modulation.bias.data.zero_()
 
 
-    def forward(self, x, c):
-        shift, scale = self.adaLN_modulation(c)[:, None].chunk(2, dim=2)
-        x = modulate_fused(self.norm_final(x), shift, scale)
+    def forward(self, x, c, offsets):
+        shift, scale = self.adaLN_modulation(c).unsqueeze(1).chunk(2, dim=2)
+        # print("Final Layer shift and scale")
+        # print(shift.shape, scale.shape)
+
+        # print("X before modulate")
+        # print(x)
+        x = modulate_fused(self.norm_final(x), shift, scale, offsets=offsets)
+        # print("X after modulate")
+        # print(x)
         x = self.linear(x)
+        # print("X after linear")
+        # print(x)
         return x
 
 
@@ -324,39 +412,81 @@ class SEDD_flex(nn.Module, PyTorchModelHubMixin):
         self.scale_by_sigma = config.model.scale_by_sigma
 
     
-    def _get_bias_dropout_scale(self):
-        return (
-            bias_dropout_add_scale_fused_train
-            if self.training
-            else bias_dropout_add_scale_fused_inference
-        )
+    # def _get_bias_dropout_scale(self):
+    #     return (
+    #         bias_dropout_add_scale_fused_train
+    #         if self.training
+    #         else bias_dropout_add_scale_fused_inference
+    #     )
 
 
     def forward(self, indices, sigma):
-        for t in indices.unbind():
-            print("Indices")
-            print(t.shape)
-        x = self.vocab_embed(indices)
-        for x1 in x.unbind():
-            print("Embedding")
-            print(x1.shape)
-        c = F.silu(self.sigma_map(sigma))
+        
+        # print("Indices")
+        # print(indices)
+        x, offsets = self.vocab_embed(indices)
+        # print("x1")
+        # print(x)
+        # print("Embedding output requires grad:", x.requires_grad)
 
-        rotary_cos_sin = self.rotary_emb(x)
-        print(rotary_cos_sin.shape)
+        c = F.silu(self.sigma_map(sigma))
+        # print("Sigma map output requires grad:", c.requires_grad)
+        # print("c")
+        # print(c)
+
+        rotary_cos_sin = self.rotary_emb(x, offsets)
+        # print("Rotary output")
+        # print(rotary_cos_sin)
+        # for cos_sin in rotary_cos_sin:
+        #     cos, sin = cos_sin
+        #     print(cos.shape)
+        #     print(sin.shape)
+
+        # Build the seq_idx lookup table, and the block mask
+        seq_idx, total_length = build_seq_idx(offsets=offsets)
+        mask_mod_njt = create_njt_wrapper(seq_idx)
+
+        block_mask = create_block_mask_cached(
+            mask_mod_njt, 1, 1, total_length, total_length, device=x.device
+        )
+        # print("Block Mask")
+        # print(block_mask)
 
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
             for i in range(len(self.blocks)):
-                x = self.blocks[i](x, rotary_cos_sin, c)
+                x = self.blocks[i](x, rotary_cos_sin, c, block_mask, offsets)
+                # print(f"Block {i} output requires grad:", x.requires_grad)
+                print(f"x{i}")
+                print(x)
 
-            x = self.output_layer(x, c)
+            x = self.output_layer(x, c, offsets)
+            # print("Output layer requires grad:", x.requires_grad)
+            print(f"x_out")
+            print(x)
 
 
         if self.scale_by_sigma:
             assert self.absorb, "Haven't configured this to work."
             esigm1_log = torch.where(sigma < 0.5, torch.expm1(sigma), sigma.exp() - 1).log().to(x.dtype)[:, None, None]
-            x = x - esigm1_log - np.log(x.shape[-1] - 1)# this will be approximately averaged at 0
-            
+            if offsets is not None:
+                esigm1_log = expand_using_offsets(esigm1_log, offsets).squeeze(-1)
+
+            ## TODO
+            # # # TODO: to test precision of np.log cast to bfloat16
+            # # print(torch.tensor(np.log(x.shape[-1] - 1)).to(x.dtype))
+            # x = x - esigm1_log - np.log(x.shape[-1] - 1) # this will be approximately averaged at 0 TODO: fix precision issues of np.log being converted to bfloat16 (0.0025 precision)
+            ## TODO
+
+        # Make the indices corresponding to the input tokens zero
+        if indices.is_nested:
+            indices = torch.cat([t for t in indices.unbind()], dim=0)
+        
+        print("X before scatter")
+        print(x)
         x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
+        print("X after scatter")
+        print(x)
+
+        # print("Final output requires grad:", x.requires_grad)
 
         return x

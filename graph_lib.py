@@ -3,8 +3,11 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.cuda.amp import custom_fwd, custom_bwd
 
+from model.nested_utils import (
+    expand_using_offsets,
+    flatten_nested_tensor,
+)
 
 from catsample import sample_categorical
 
@@ -106,7 +109,7 @@ class Graph(abc.ABC):
 
 
     @abc.abstractmethod
-    def score_entropy(self, score, sigma, x, x0):
+    def score_entropy(self, score, sigma, x, x0, offsets=None):
         """
         Computes the score entropy function (with requisite constant normalization)
         """
@@ -161,7 +164,7 @@ class Uniform(Graph):
     def sample_limit(self, *batch_dims):
         return torch.randint(0, self.dim, batch_dims)
 
-    def score_entropy(self, score, sigma, x, x0):
+    def score_entropy(self, score, sigma, x, x0, offsets=None):
         esigm1 = torch.where( # more precise, compute differently for sigma under 0.5, than for over 0.5. (exp(sigma) - 1)
             sigma < 0.5,
             torch.expm1(sigma),
@@ -231,7 +234,7 @@ class Absorbing(Graph): #  we exponentiate (which maintains positivity) to be be
         move_chance = 1 - (-sigma).exp()
         # print("move_chance", move_chance)
         if i.is_nested:
-            print("Nested")
+            # print("Nested")
             # # Handle nested tensors
             # for t in i.unbind():
             #     print("i", t.shape)
@@ -275,27 +278,49 @@ class Absorbing(Graph): #  we exponentiate (which maintains positivity) to be be
     def sample_limit(self, *batch_dims):
         return (self.dim - 1) * torch.ones(*batch_dims, dtype=torch.int64)
 
-    def score_entropy(self, score, sigma, x, x0):
-        rel_ind = x == self.dim - 1
+    def score_entropy(self, score, sigma, x, x0, offsets=None):
         esigm1 = torch.where( # more precise, compute differently for sigma under 0.5, than for over 0.5. (exp(sigma) - 1)
             sigma < 0.5,
             torch.expm1(sigma),
             torch.exp(sigma) - 1
         )
+        # print("esigm1", esigm1.shape)
+        if offsets is not None:
+            esigm1 = expand_using_offsets(esigm1, offsets=offsets).squeeze(-1) # (B, 1) -> (BL)
+            # print("esigm1", esigm1.shape)
+            # print("x", x.shape)
+            x = flatten_nested_tensor(x) # (B, L) -> (BL)
+            # print("x", x.shape)
+            # print("x0", x0.shape)
+            x0 = flatten_nested_tensor(x0)  # (B, L) -> (BL)
+            # print("x0", x0.shape)
+        else:
+            esigm1 = esigm1.expand_as(x)
 
-        ratio = 1 / esigm1.expand_as(x)[rel_ind]
-        other_ind = x0[rel_ind]
+        rel_ind = x == self.dim - 1 # Where x is the absorbing state (mask)
+        # print("rel_ind", rel_ind.shape)
+        # print("score", score.shape)
+
+        ratio = 1 / esigm1[rel_ind]
+        # print("ratio", ratio.shape)
+        other_ind = x0[rel_ind] # The state we want to go to (target)
+        # print("other_ind", other_ind.shape)
 
         # negative_term
         neg_term = ratio * torch.gather(score[rel_ind], -1, other_ind[..., None]).squeeze(-1)
+        # print("neg_term", neg_term.shape)
 
-        #positive term
+        # positive term
         pos_term = score[rel_ind][:, :-1].exp().sum(dim=-1)
+        # print("pos_term", pos_term.shape)
 
         # constant term
         const = ratio * (ratio.log() - 1)
+        # print("const", const.shape)
 
         entropy = torch.zeros(*x.shape, device=x.device)
+        # print("entropy", entropy.shape)
         entropy[rel_ind] += pos_term - neg_term + const
+        print("entropy", entropy)
+
         return entropy
-    

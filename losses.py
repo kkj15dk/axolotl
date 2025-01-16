@@ -5,8 +5,10 @@ import numpy as np
 import graph_lib
 from model import utils as mutils
 
+from model.nested_utils import expand_using_offsets
 
-def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
+
+def get_loss_fn(noise, graph: graph_lib.Graph, train, sampling_eps=1e-3, lv=False):
 
     def loss_fn(model, batch, cond=None, t=None, perturbed_batch=None):
         """
@@ -20,15 +22,28 @@ def get_loss_fn(noise, graph, train, sampling_eps=1e-3, lv=False):
                 t = (1 - sampling_eps) * torch.rand(batch.shape[0], device=batch.device) + sampling_eps
             
         sigma, dsigma = noise(t)
-        
+
+        # print("sigma", sigma)
+        # print("dsigma", dsigma)
+        # print(sigma.shape)
+        # print(dsigma.shape)
+
         if perturbed_batch is None:
             perturbed_batch = graph.sample_transition(batch, sigma[:, None])
+        
+        offsets = perturbed_batch.offsets()
 
         log_score_fn = mutils.get_score_fn(model, train=train, sampling=False)
         log_score = log_score_fn(perturbed_batch, sigma)
-        loss = graph.score_entropy(log_score, sigma[:, None], perturbed_batch, batch)
+        print("log_score", log_score)
+        # print("log_score", log_score.shape)
+        # loss = graph.score_entropy(log_score, sigma[:, None], perturbed_batch, batch, offsets=offsets)
+        loss = graph.score_entropy(log_score, sigma, perturbed_batch, batch, offsets=offsets)
+        # print("loss", loss.shape)
 
-        loss = (dsigma[:, None] * loss).sum(dim=-1)
+        dsigma = expand_using_offsets(dsigma, offsets)
+        loss = dsigma * loss # Loss weighted by dsigma?
+        print("loss", loss)
 
         return loss
 
@@ -79,6 +94,7 @@ def get_step_fn(noise, graph, train, optimize_fn, accum):
 
     accum_iter = 0
     total_loss = 0
+    assert accum == 1, "Accumulation is not supported yet"
 
     def step_fn(state, batch, cond=None):
         nonlocal accum_iter 
@@ -87,10 +103,20 @@ def get_step_fn(noise, graph, train, optimize_fn, accum):
         model = state['model']
 
         if train:
+            # Ensure model parameters require gradients
+            for name, param in model.named_parameters():
+                if not param.requires_grad:
+                    print(f"Parameter {name} does not require grad")
+            
             optimizer = state['optimizer']
             scaler = state['scaler']
             loss = loss_fn(model, batch, cond=cond).mean() / accum
+            print("loss", loss)
             
+            # Check if loss requires gradients
+            if not loss.requires_grad:
+                raise RuntimeError("Loss tensor does not require gradients")
+
             scaler.scale(loss).backward()
 
             accum_iter += 1
