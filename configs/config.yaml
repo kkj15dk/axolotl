@@ -1,14 +1,14 @@
 defaults:
   - _self_
   - model: small
-  # - override hydra/launcher: submitit_slurm
-  - override hydra/launcher: basic
+  - override hydra/launcher: basic # submitit_slurm
 
+ngpus: 1
 ngpus: 1
 tokens: 50257
 
 training:
-  batch_size: 4
+  batch_size: 8
   accum: 1
   n_iters: 1300001
   snapshot_freq: 10 # 50000
@@ -62,6 +62,14 @@ hydra:
     dir: exp/${data.train}/${now:%Y.%m.%d}/${now:%H%M%S}
     subdir: ${hydra.job.num}
   launcher:
+    # max_num_timeout: 100000
+    # # timeout_min: 10079
+    # partition: g40x
+    # account: stanford
+    # mem_gb: 96
+    # cpus_per_task: 40
+    # gpus_per_node: ${ngpus}
+    # constraint: null
     # max_num_timeout: 100000
     # # timeout_min: 10079
     # partition: g40x

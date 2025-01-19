@@ -21,4 +21,4 @@ core
 **.log
 *.jsonl
 .venv/
-datasets/*
+datasets/

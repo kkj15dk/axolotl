@@ -232,12 +232,9 @@ class Absorbing(Graph): #  we exponentiate (which maintains positivity) to be be
 
     def sample_transition(self, i: torch.Tensor, sigma):
         move_chance = 1 - (-sigma).exp()
-        # print("move_chance", move_chance)
+        # move_indices = torch.rand(*i.shape, device=i.device) < move_chance # TODO: using rand_like, when it becomes available https://github.com/pytorch/pytorch/pull/144889
+        
         if i.is_nested:
-            # print("Nested")
-            # # Handle nested tensors
-            # for t in i.unbind():
-            #     print("i", t.shape)
             move_indices_list = [
                 torch.rand(len, device=i.device) < mc.item() for len, mc in zip(i.offsets().diff(), move_chance.unbind())
             ]
@@ -258,14 +255,11 @@ class Absorbing(Graph): #  we exponentiate (which maintains positivity) to be be
             i_pert = torch.nested.nested_tensor([
                 torch.where(mi, self.dim - 1, t) for mi, t in zip(move_indices.unbind(), i.unbind())
             ], layout=torch.jagged)
-            
-            # print("i_pert", i_pert)
-            # for t in i_pert.unbind():
-            #     print("i_pert", t.shape)
         else:
             # Handle regular tensors
             move_indices = torch.rand(*i.shape, device=i.device) < move_chance
             i_pert = torch.where(move_indices, self.dim - 1, i)
+            
         return i_pert
     
     def staggered_score(self, score, dsigma):
