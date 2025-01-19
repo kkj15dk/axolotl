@@ -1,6 +1,15 @@
 import torch
 from torch import nn
 
+# ## nested tensor utils
+
+# def nested_lens(x):
+#     assert x.is_nested
+#     return x.offsets().diff()
+
+# def nested_max_len(x):
+#     assert x.is_nested
+#     return x.offsets().diff().max()
 
 class Rotary(torch.nn.Module):
     def __init__(self, dim, base=10_000):
@@ -12,10 +21,14 @@ class Rotary(torch.nn.Module):
         self.sin_cached = None
 
     def forward(self, x, seq_dim=1):
-        seq_len = x.shape[seq_dim]
+        if x.is_nested:
+            seq_len = x.offsets().diff().max().item()
+        else:
+            seq_len = x.shape[seq_dim]
+        print("seq_len", seq_len)
         if seq_len != self.seq_len_cached:
             self.seq_len_cached = seq_len
-            t = torch.arange(x.shape[seq_dim], device=x.device).type_as(self.inv_freq)
+            t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
             freqs = torch.einsum("i,j->ij", t, self.inv_freq.clone())
             emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
             # dims are: batch, seq_len, qkv, head, dim
