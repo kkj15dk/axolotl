@@ -8,7 +8,7 @@ import urllib.request
 import zipfile
 import requests
 import json
-from datasets import Dataset, load_from_disk
+from datasets import load_from_disk, Dataset
 
 from torch.utils.data import DataLoader, DistributedSampler, Sampler
 from typing import Optional
