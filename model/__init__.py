@@ -1,2 +1,2 @@
+from .transformer_old import SEDD_old
 from .transformer import SEDD
-from .transformer_nested_2 import SEDD_nested

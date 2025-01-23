@@ -4,25 +4,23 @@ defaults:
   - override hydra/launcher: basic # submitit_slurm
 
 ngpus: 1
-ngpus: 1
-tokens: 50257
+tokens: 23 # 23 for uniform
 
 training:
-  batch_size: 8
+  batch_size: 4
   accum: 1
   n_iters: 1300001
-  snapshot_freq: 10 # 50000
-  log_freq: 10 # 50
-  eval_freq: 10 # 100
+  snapshot_freq: 1000
+  log_freq: 100
+  eval_freq: 500
   snapshot_freq_for_preemption: 10000
   weight: standard
   snapshot_sampling: True
   ema: 0.9999
 
 data:
-  train: openwebtext
-  valid: wikitext103
-  cache_dir: data
+  train: /home/kkj/axolotl/datasets/IPR036736_90_grouped/train
+  valid: /home/kkj/axolotl/datasets/IPR036736_90_grouped/valid
 
 graph:
   type: absorb
@@ -41,7 +39,7 @@ sampling:
 
 eval:
   batch_size: 4
-  perplexity: True
+  perplexity: False # True
   perplexity_batch_size: 32
 
 optim:

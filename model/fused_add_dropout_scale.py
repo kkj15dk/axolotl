@@ -34,14 +34,14 @@ def modulate(x: Tensor, shift: Tensor, scale: Tensor) -> Tensor:
     return x * (1 + scale) + shift
 
 
-@torch.jit.script
+# @torch.jit.script # TODO: fix torchscript for nested tensors
 def bias_dropout_add_scale_fused_train(
     x: Tensor, bias: Optional[Tensor], scale: Tensor, residual: Optional[Tensor], prob: float
 ) -> Tensor:
     return bias_dropout_add_scale(x, bias, scale, residual, prob, True)
 
 
-@torch.jit.script
+# @torch.jit.script # TODO: fix torchscript for nested tensors
 def bias_dropout_add_scale_fused_inference(
     x: Tensor, bias: Optional[Tensor], scale: Tensor, residual: Optional[Tensor], prob: float
 ) -> Tensor:

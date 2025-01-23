@@ -4,10 +4,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
-from model.nested_utils import (
-    expand_using_offsets,
-    flatten_nested_tensor,
-)
+from utils_nested import packed_tensor_from_jagged, jagged_from_packed_tensor, coerce_offsets, expand_using_offsets
 
 from catsample import sample_categorical
 
@@ -272,33 +269,25 @@ class Absorbing(Graph): #  we exponentiate (which maintains positivity) to be be
     def sample_limit(self, *batch_dims):
         return (self.dim - 1) * torch.ones(*batch_dims, dtype=torch.int64)
 
-    def score_entropy(self, score, sigma, x, x0, offsets=None):
-        esigm1 = torch.where( # more precise, compute differently for sigma under 0.5, than for over 0.5. (exp(sigma) - 1)
+    def score_entropy(self, score, sigma, x, x0):
+        esigm1 = torch.where(
             sigma < 0.5,
             torch.expm1(sigma),
             torch.exp(sigma) - 1
         )
-        # print("esigm1", esigm1.shape)
-        if offsets is not None:
-            esigm1 = expand_using_offsets(esigm1, offsets=offsets).squeeze(-1) # (B, 1) -> (BL)
-            # print("esigm1", esigm1.shape)
-            # print("x", x.shape)
-            x = flatten_nested_tensor(x) # (B, L) -> (BL)
-            # print("x", x.shape)
-            # print("x0", x0.shape)
-            x0 = flatten_nested_tensor(x0)  # (B, L) -> (BL)
-            # print("x0", x0.shape)
+
+        if score.is_nested:
+            score, offsets = packed_tensor_from_jagged(score)
+            x, off1 = packed_tensor_from_jagged(x)
+            x0, off2 = packed_tensor_from_jagged(x0)
+            esigm1 = expand_using_offsets(esigm1, offsets).squeeze(-1)
         else:
             esigm1 = esigm1.expand_as(x)
-
-        rel_ind = x == self.dim - 1 # Where x is the absorbing state (mask)
-        # print("rel_ind", rel_ind.shape)
-        # print("score", score.shape)
-
+            offsets = None
+        
+        rel_ind = x == self.dim - 1
         ratio = 1 / esigm1[rel_ind]
-        # print("ratio", ratio.shape)
-        other_ind = x0[rel_ind] # The state we want to go to (target)
-        # print("other_ind", other_ind.shape)
+        other_ind = x0[rel_ind]
 
         # negative_term
         neg_term = ratio * torch.gather(score[rel_ind], -1, other_ind[..., None]).squeeze(-1)
@@ -315,6 +304,8 @@ class Absorbing(Graph): #  we exponentiate (which maintains positivity) to be be
         entropy = torch.zeros(*x.shape, device=x.device)
         # print("entropy", entropy.shape)
         entropy[rel_ind] += pos_term - neg_term + const
-        print("entropy", entropy)
+
+        if offsets is not None:
+            entropy = jagged_from_packed_tensor(entropy, offsets)
 
         return entropy

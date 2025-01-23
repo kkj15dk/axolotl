@@ -5,7 +5,7 @@ import numpy as np
 import math
 
 from einops import rearrange
-from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
+# from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
 # from flash_attn.ops.fused_dense import FusedMLP, FusedDense
 from huggingface_hub import PyTorchModelHubMixin
 from omegaconf import OmegaConf
@@ -15,38 +15,42 @@ from .fused_add_dropout_scale import (
     bias_dropout_add_scale_fused_train, 
     bias_dropout_add_scale_fused_inference, 
     get_bias_dropout_add_scale, 
-    modulate_fused,
+    # modulate_fused,
 )
 
+from torch.nn.attention import SDPBackend, sdpa_kernel
+
+from utils_nested import packed_tensor_from_jagged, jagged_from_packed_tensor, coerce_offsets, expand_using_offsets
 
 def modulate(x, shift, scale):
-    return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
 
+    # print("x modulation", x.shape)
+    # print("offsets", x.offsets())
+    if scale is not None:
+        # print("scale", scale.shape)
+        x = x * (1 + scale)
+    if shift is not None:
+        # print("shift", shift.shape)
+        x = x + shift
+    
+    return x
 
 
 #################################################################################
 #                                  Layers                                       #
 #################################################################################
-class LayerNorm(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones([dim]))
-        self.dim = dim
-    def forward(self, x):
-        with torch.amp.autocast('cuda', enabled=False):
-            x = F.layer_norm(x.float(), [self.dim])
-        return x * self.weight[None,None,:]
 
 
-def residual_linear(x, W, x_skip, residual_scale):
-    """x_skip + residual_scale * W @ x"""
-    dim_out, dim_in = W.shape[0], W.shape[1]
-    return torch.addmm(
-        x_skip.view(-1, dim_out),
-        x.view(-1, dim_in),
-        W.T,
-        alpha=residual_scale
-    ).view(*x.shape[:-1], dim_out)
+# # old layernorm from original SEDD code
+# class LayerNorm(nn.Module):
+#     def __init__(self, dim):
+#         super().__init__()
+#         self.weight = nn.Parameter(torch.ones([dim]))
+#         self.dim = dim
+#     def forward(self, x):
+#         with torch.amp.autocast('cuda', enabled=False):
+#             x = F.layer_norm(x.float(), [self.dim])
+#         return x * self.weight[None,None,:]
 
 
 #################################################################################
@@ -121,45 +125,31 @@ class DDiTBlock(nn.Module):
         super().__init__()
         self.n_heads = n_heads
 
-        self.norm1 = LayerNorm(dim)
+        self.norm1 = nn.LayerNorm([dim])
         self.attn_qkv = nn.Linear(dim, 3 * dim, bias=False)
         self.attn_out = nn.Linear(dim, dim, bias=False)
-        self.dropout1 = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout)
 
-        self.norm2 = LayerNorm(dim)
+        self.norm2 = nn.LayerNorm([dim])
         self.mlp = nn.Sequential(
             nn.Linear(dim, mlp_ratio * dim, bias=True),
             nn.GELU(approximate="tanh"),
             nn.Linear(mlp_ratio * dim, dim, bias=True)
         )
-        self.dropout2 = nn.Dropout(dropout)
-
-        self.dropout = dropout
-        
 
         self.adaLN_modulation = nn.Linear(cond_dim, 6 * dim, bias=True)
         self.adaLN_modulation.weight.data.zero_()
         self.adaLN_modulation.bias.data.zero_()
 
 
-    def _get_bias_dropout_scale(self):
-        return (
-            bias_dropout_add_scale_fused_train
-            if self.training
-            else bias_dropout_add_scale_fused_inference
-        )
-
-
     def forward(self, x, rotary_cos_sin, c, seqlens=None):
-        batch_size, seq_len = x.shape[0], x.shape[1]
+        batch_size, max_seq_len = x.shape[0], rotary_cos_sin[0].shape[1]
 
-        bias_dropout_scale_fn = self._get_bias_dropout_scale()
-
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c)[:, None].chunk(6, dim=2)
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).unsqueeze(1).chunk(6, dim=2)
 
         # attention operation
         x_skip = x
-        x = modulate_fused(self.norm1(x), shift_msa, scale_msa)
+        x = modulate(self.norm1(x), shift_msa, scale_msa)
         # dtype0 = x.dtype
 
         qkv = self.attn_qkv(x)
@@ -169,25 +159,35 @@ class DDiTBlock(nn.Module):
             qkv = rotary.apply_rotary_pos_emb(
                 qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
             )
-        qkv = rearrange(qkv, 'b s ... -> (b s) ...')
-        if seqlens is None:
-            cu_seqlens = torch.arange(
-                0, (batch_size + 1) * seq_len, step=seq_len,
-                dtype=torch.int32, device=qkv.device
-            )
-        else:
-            cu_seqlens = seqlens.cumsum(-1)
-        x = flash_attn_varlen_qkvpacked_func(
-            qkv, cu_seqlens, seq_len, 0., causal=False)
         
-        x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
+        q, k, v = qkv.chunk(3, dim=-3)
+        q, k, v = q.squeeze(-3), k.squeeze(-3), v.squeeze(-3)
+        q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+        
+        with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+            x = F.scaled_dot_product_attention(q, k, v)
+        
+        x = rearrange(x, 'b h s d -> b s (h d)')
 
-        x = bias_dropout_scale_fn(self.attn_out(x), None, gate_msa, x_skip, self.dropout)
+        # out
+        x = self.attn_out(x)
+        x = modulate(x, None, gate_msa)
+        x = self.dropout(x)
+        if x_skip.is_nested:
+            x_skip = coerce_offsets(x_skip, x) # TODO: should be fixed in a future release, so you don't have to coerce the offsets
+        x = x + x_skip
 
         # mlp operation
-        x = bias_dropout_scale_fn(self.mlp(modulate_fused(self.norm2(x), shift_mlp, scale_mlp)), None, gate_mlp, x, self.dropout)
-        return x
+        x_skip = x
+        x = modulate(self.norm2(x), shift_mlp, scale_mlp)
+        x = self.mlp(x)
+        x = modulate(x, None, gate_mlp)
+        x = self.dropout(x)
+        if x_skip.is_nested:
+            x_skip = coerce_offsets(x_skip, x) # TODO: should be fixed in a future release, so you don't have to coerce the offsets
+        x = x + x_skip
 
+        return x
 
 
 class EmbeddingLayer(nn.Module):
@@ -197,17 +197,22 @@ class EmbeddingLayer(nn.Module):
         2-> add in eigenvectors, 3 -> use pretrained embedding matrix
         """
         super().__init__()
-        self.embedding = nn.Parameter(torch.empty((vocab_dim, dim)))
-        torch.nn.init.kaiming_uniform_(self.embedding, a=math.sqrt(5))
+        # # old implementation
+        # self.embedding = nn.Parameter(torch.empty((vocab_dim, dim)))
+        # torch.nn.init.kaiming_uniform_(self.embedding, a=math.sqrt(5))
+        # new implementation
+        self.embedding = nn.Embedding(vocab_dim, dim)
+        torch.nn.init.kaiming_uniform_(self.embedding.weight, a=math.sqrt(5))
 
     def forward(self, x):
-        return self.embedding[x]
+
+        return self.embedding(x)
 
 
 class DDitFinalLayer(nn.Module):
     def __init__(self, hidden_size, out_channels, cond_dim):
         super().__init__()
-        self.norm_final = LayerNorm(hidden_size)
+        self.norm_final = nn.LayerNorm([hidden_size])
         self.linear = nn.Linear(hidden_size, out_channels)
         self.linear.weight.data.zero_()
         self.linear.bias.data.zero_()
@@ -218,8 +223,9 @@ class DDitFinalLayer(nn.Module):
 
 
     def forward(self, x, c):
-        shift, scale = self.adaLN_modulation(c)[:, None].chunk(2, dim=2)
-        x = modulate_fused(self.norm_final(x), shift, scale)
+        shift, scale = self.adaLN_modulation(c).unsqueeze(1).chunk(2, dim=-1)
+        x = self.norm_final(x)
+        x = modulate(x, shift, scale)
         x = self.linear(x)
         return x
 
@@ -248,7 +254,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         self.output_layer = DDitFinalLayer(config.model.hidden_size, vocab_size, config.model.cond_dim)
         self.scale_by_sigma = config.model.scale_by_sigma
 
-    
+
     def _get_bias_dropout_scale(self):
         return (
             bias_dropout_add_scale_fused_train
@@ -275,7 +281,14 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
             assert self.absorb, "Haven't configured this to work."
             esigm1_log = torch.where(sigma < 0.5, torch.expm1(sigma), sigma.exp() - 1).log().to(x.dtype)[:, None, None]
             x = x - esigm1_log - np.log(x.shape[-1] - 1)# this will be approximately averaged at 0
-            
-        x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
+        
+
+        if x.is_nested:
+            x, offsets = packed_tensor_from_jagged(x)
+            indices, _ = packed_tensor_from_jagged(indices)
+            x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
+            x = jagged_from_packed_tensor(x, offsets)
+        else:
+            x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
 
         return x

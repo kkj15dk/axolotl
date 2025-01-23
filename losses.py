@@ -5,9 +5,10 @@ import numpy as np
 import graph_lib
 from model import utils as mutils
 
-from model.nested_utils import expand_using_offsets
+import timeit
 
 
+def get_loss_fn(noise, graph: graph_lib.Graph, train, sampling_eps=1e-3, lv=False):
 def get_loss_fn(noise, graph: graph_lib.Graph, train, sampling_eps=1e-3, lv=False):
 
     def loss_fn(model, batch, cond=None, t=None, perturbed_batch=None):
@@ -35,15 +36,13 @@ def get_loss_fn(noise, graph: graph_lib.Graph, train, sampling_eps=1e-3, lv=Fals
 
         log_score_fn = mutils.get_score_fn(model, train=train, sampling=False)
         log_score = log_score_fn(perturbed_batch, sigma)
-        print("log_score", log_score)
-        # print("log_score", log_score.shape)
-        # loss = graph.score_entropy(log_score, sigma[:, None], perturbed_batch, batch, offsets=offsets)
-        loss = graph.score_entropy(log_score, sigma, perturbed_batch, batch, offsets=offsets)
-        # print("loss", loss.shape)
+        loss = graph.score_entropy(log_score, sigma[:, None], perturbed_batch, batch) # loss shape: (B, j1)
 
-        dsigma = expand_using_offsets(dsigma, offsets)
-        loss = dsigma * loss # Loss weighted by dsigma?
-        print("loss", loss)
+        if log_score.is_nested:
+            loss = (dsigma[:, None] * loss)
+        else:
+            raise NotImplementedError("Not implemented yet, shouldn't use sum if i use mean for nested tensor loss")
+            loss = (dsigma[:, None] * loss).sum(dim=-1)
 
         return loss
 
@@ -101,6 +100,21 @@ def get_step_fn(noise, graph, train, optimize_fn, accum):
         nonlocal total_loss
 
         model = state['model']
+        # def forward_hook(module, input, output):
+        #     try:
+        #         print(f"Forward hook for {module.__class__.__name__}: input shape {input[0].shape}, output shape {output.shape}")
+        #     except:
+        #         print(f"{module.__class__.__name__}: can't print shapes")
+        # def backward_hook(module, grad_input, grad_output):
+        #     try:
+        #         print(f"Backward hook for {module.__class__.__name__}: grad_input shape {grad_input[0].shape}, grad_output shape {grad_output[0].shape}")
+        #     except:
+        #         print(f"{module.__class__.__name__}: can't print shapes")
+
+        # # Register hooks
+        # for name, module in model.named_modules():
+        #     module.register_forward_hook(forward_hook)
+        #     module.register_backward_hook(backward_hook)
 
         if train:
             # Ensure model parameters require gradients
@@ -111,13 +125,14 @@ def get_step_fn(noise, graph, train, optimize_fn, accum):
             optimizer = state['optimizer']
             scaler = state['scaler']
             loss = loss_fn(model, batch, cond=cond).mean() / accum
-            print("loss", loss)
-            
-            # Check if loss requires gradients
-            if not loss.requires_grad:
-                raise RuntimeError("Loss tensor does not require gradients")
 
+            # graph = make_dot(loss_fn(model, batch, cond=cond).mean() / accum, params=dict(model.named_parameters()))
+            # graph.render("graph")
+
+            # time1 = timeit.default_timer()
             scaler.scale(loss).backward()
+            # time2 = timeit.default_timer()
+            # print("time to call backwards", time2 - time1)
 
             accum_iter += 1
             total_loss += loss.detach()
