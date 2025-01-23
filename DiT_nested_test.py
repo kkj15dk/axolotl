@@ -12,15 +12,15 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.nn.functional as F
 
-import data
+import data_nested as data
 import losses
 import sampling
 import graph_lib
 import noise_lib
 import utils
-from model import SEDD_nested
+from model import SEDD
 from model.ema import ExponentialMovingAverage
-from transformers import GPT2TokenizerFast, GPT2LMHeadModel
+from transformers import GPT2TokenizerFast, GPT2LMHeadModel, PreTrainedTokenizerFast
 
 
 torch.backends.cudnn.benchmark = True
@@ -107,7 +107,7 @@ def _run(rank, world_size, cfg):
     graph = graph_lib.get_graph(cfg, device)
     
     # build score model
-    score_model = SEDD_nested(cfg).to(device)
+    score_model = SEDD(cfg).to(device)
     score_model = DDP(score_model, device_ids=[rank], static_graph=True, find_unused_parameters=True)
 
     num_parameters = sum(p.numel() for p in score_model.parameters())
@@ -136,9 +136,16 @@ def _run(rank, world_size, cfg):
     state = utils.restore_checkpoint(checkpoint_meta_dir, state, device)
     initial_step = int(state['step'])
 
-    
     # load in tokenizer
-    tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
+    tokenizer = PreTrainedTokenizerFast.from_pretrained('/home/kkj/axolotl/tokenizer/tokenizer_absorb')
+
+    # Build data iterators
+    train_ds, eval_ds = data.get_dataloaders(cfg)
+
+    # mprint(f"Length of datasets: {len(train_ds)}, {len(eval_ds)}")
+
+    train_iter = iter(train_ds)
+    eval_iter = iter(eval_ds)
 
     # Build one-step training and evaluation functions
     optimize_fn = losses.optimization_manager(cfg)
@@ -157,8 +164,7 @@ def _run(rank, world_size, cfg):
     while state['step'] < num_train_steps + 1:
         step = state['step']
 
-        batch = get_random_batch(cfg)
-        print("batch shape:", batch.shape)
+        batch = next(train_iter)['input_ids'].to(device)
 
         loss = train_step_fn(state, batch)
 
@@ -174,8 +180,9 @@ def _run(rank, world_size, cfg):
                 utils.save_checkpoint(checkpoint_meta_dir, state)
 
             if step % cfg.training.eval_freq == 0:
-                    
-                eval_batch = get_random_batch(cfg)
+
+                eval_batch = next(eval_iter)['input_ids'].to(device)
+
                 eval_loss = eval_step_fn(state, eval_batch)
 
                 dist.all_reduce(eval_loss)

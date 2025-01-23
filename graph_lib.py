@@ -3,8 +3,8 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.cuda.amp import custom_fwd, custom_bwd
 
+from utils_nested import packed_tensor_from_jagged, jagged_from_packed_tensor, coerce_offsets, expand_using_offsets
 
 from catsample import sample_categorical
 
@@ -268,14 +268,23 @@ class Absorbing(Graph):
         return (self.dim - 1) * torch.ones(*batch_dims, dtype=torch.int64)
 
     def score_entropy(self, score, sigma, x, x0):
-        rel_ind = x == self.dim - 1
         esigm1 = torch.where(
             sigma < 0.5,
             torch.expm1(sigma),
             torch.exp(sigma) - 1
         )
 
-        ratio = 1 / esigm1.expand_as(x)[rel_ind]
+        if score.is_nested:
+            score, offsets = packed_tensor_from_jagged(score)
+            x, off1 = packed_tensor_from_jagged(x)
+            x0, off2 = packed_tensor_from_jagged(x0)
+            esigm1 = expand_using_offsets(esigm1, offsets).squeeze(-1)
+        else:
+            esigm1 = esigm1.expand_as(x)
+            offsets = None
+        
+        rel_ind = x == self.dim - 1
+        ratio = 1 / esigm1[rel_ind]
         other_ind = x0[rel_ind]
 
         # negative_term
@@ -289,5 +298,9 @@ class Absorbing(Graph):
 
         entropy = torch.zeros(*x.shape, device=x.device)
         entropy[rel_ind] += pos_term - neg_term + const
+
+        if offsets is not None:
+            entropy = jagged_from_packed_tensor(entropy, offsets)
+
         return entropy
     
