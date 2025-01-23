@@ -10,7 +10,6 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.types import RunMode
 from omegaconf import OmegaConf, open_dict
 
-
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(cfg):
     ngpus = cfg.ngpus

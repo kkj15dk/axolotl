@@ -177,8 +177,9 @@ class DDiTBlock(nn.Module):
             )
         else:
             cu_seqlens = seqlens.cumsum(-1)
-        x = flash_attn_varlen_qkvpacked_func(
-            qkv, cu_seqlens, seq_len, 0., causal=False)
+        raise NotImplementedError("Flash attention for the old version broke")
+        # x = flash_attn_varlen_qkvpacked_func(
+        #     qkv, cu_seqlens, seq_len, 0., causal=False)
         
         x = rearrange(x, '(b s) h d -> b s (h d)', b=batch_size)
 

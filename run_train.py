@@ -3,6 +3,7 @@ import os
 import os.path
 import gc
 from itertools import chain
+import random
 
 import numpy as np
 import torch
@@ -10,7 +11,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.nn.functional as F
 
-import data
+import data_nested as data
 import losses
 import sampling
 import graph_lib
@@ -18,7 +19,7 @@ import noise_lib
 import utils
 from model import SEDD
 from model.ema import ExponentialMovingAverage
-from transformers import GPT2TokenizerFast, GPT2LMHeadModel
+from transformers import GPT2TokenizerFast, GPT2LMHeadModel, PreTrainedTokenizerFast
 
 
 torch.backends.cudnn.benchmark = True
@@ -116,9 +117,8 @@ def _run(rank, world_size, cfg):
     state = utils.restore_checkpoint(checkpoint_meta_dir, state, device)
     initial_step = int(state['step'])
 
-    
     # load in tokenizer
-    tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
+    tokenizer = PreTrainedTokenizerFast.from_pretrained('/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb')
 
     # Build data iterators
     train_ds, eval_ds = data.get_dataloaders(cfg)
@@ -145,11 +145,8 @@ def _run(rank, world_size, cfg):
     while state['step'] < num_train_steps + 1:
         step = state['step']
 
+        batch = next(train_iter)['input_ids'].to(device)
 
-        if cfg.data.train != "text8":
-            batch = next(train_iter)['input_ids'].to(device)
-        else:
-            batch = next(train_iter).to(device)
         loss = train_step_fn(state, batch)
 
         # flag to see if there was movement ie a full batch got computed
@@ -164,10 +161,9 @@ def _run(rank, world_size, cfg):
                 utils.save_checkpoint(checkpoint_meta_dir, state)
 
             if step % cfg.training.eval_freq == 0:
-                if cfg.data.valid != "text8":
-                    eval_batch = next(eval_iter)['input_ids'].to(device)
-                else:
-                    eval_batch = next(train_iter).to(device)
+
+                eval_batch = next(eval_iter)['input_ids'].to(device)
+
                 eval_loss = eval_step_fn(state, eval_batch)
 
                 dist.all_reduce(eval_loss)

@@ -7,20 +7,20 @@ ngpus: 1
 tokens: 23 # 23 for uniform
 
 training:
-  batch_size: 4
+  batch_size: 16
   accum: 1
   n_iters: 1300001
-  snapshot_freq: 1000
-  log_freq: 100
-  eval_freq: 500
+  snapshot_freq: 50000
+  log_freq: 50
+  eval_freq: 100
   snapshot_freq_for_preemption: 10000
   weight: standard
   snapshot_sampling: True
   ema: 0.9999
 
 data:
-  train: /home/kkj/axolotl/datasets/IPR036736_90_grouped/train
-  valid: /home/kkj/axolotl/datasets/IPR036736_90_grouped/valid
+  train: /work3/s204514/datasets/IPR036736_90_grouped/train
+  valid: /work3/s204514/datasets/IPR036736_90_grouped/valid
 
 graph:
   type: absorb
@@ -38,7 +38,7 @@ sampling:
   noise_removal: True
 
 eval:
-  batch_size: 4
+  batch_size: 16
   perplexity: False # True
   perplexity_batch_size: 32
 

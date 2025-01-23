@@ -1,6 +1,5 @@
 import re
 from transformers import GPT2TokenizerFast
-from datasets import load_dataset, load_from_disk
 from itertools import chain
 import numpy as np
 import torch
@@ -9,7 +8,7 @@ import urllib.request
 import zipfile
 import requests
 import json
-from datasets import Dataset
+from datasets import load_dataset, Dataset
 
 from torch.utils.data import DataLoader, DistributedSampler
 
