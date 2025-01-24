@@ -123,7 +123,8 @@ def _run(rank, world_size, cfg):
     initial_step = int(state['step'])
 
     # load in tokenizer
-    tokenizer = PreTrainedTokenizerFast.from_pretrained('/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb')
+    # tokenizer = PreTrainedTokenizerFast.from_pretrained('/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb')
+    tokenizer = PreTrainedTokenizerFast.from_pretrained('/home/kkj/axolotl/tokenizer/tokenizer_absorb')    
 
     # Build data iterators
     train_ds, eval_ds = data.get_dataloaders(cfg)
