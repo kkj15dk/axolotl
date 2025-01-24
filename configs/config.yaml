@@ -19,8 +19,10 @@ training:
   ema: 0.9999
 
 data:
-  train: /work3/s204514/datasets/IPR036736_90_grouped/train
-  valid: /work3/s204514/datasets/IPR036736_90_grouped/valid
+  # train: /work3/s204514/datasets/IPR036736_90_grouped/train
+  # valid: /work3/s204514/datasets/IPR036736_90_grouped/valid
+  train: /home/kkj/axolotl/datasets/IPR036736_90_grouped/train
+  valid: /home/kkj/axolotl/datasets/IPR036736_90_grouped/valid
 
 graph:
   type: absorb
