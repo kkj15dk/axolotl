@@ -84,6 +84,11 @@ def _run(rank, world_size, cfg):
         mprint("WARNING: Using device {}".format(device))
     mprint(f"Found {os.cpu_count()} total number of CPUs.")
 
+    # CUDA version
+    mprint('CUDA version: {}'.format(torch.version.cuda))
+    # mprint('CUDA_PATH: {}'.format(os.environ['CUDA_PATH']))
+    # mprint('CUDA_HOME: {}'.format(os.environ['CUDA_HOME']))
+
     # build token graph
     graph = graph_lib.get_graph(cfg, device)
     
