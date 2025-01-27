@@ -40,17 +40,17 @@ def cleanup():
     dist.destroy_process_group()
 
 
-def run_multiprocess(rank, world_size, cfg, port):
+def run_multiprocess(rank, world_size, config, port):
     try:
         setup(rank, world_size, port)
-        _run(rank, world_size, cfg)
+        _run(rank, world_size, config)
     finally:
         cleanup()
 
 
-def _run(rank, world_size, cfg):
+def _run(rank, world_size, config):
     torch.cuda.set_device(rank)
-    work_dir = cfg.work_dir
+    work_dir = config.work_dir
 
     # Create directories for experimental logs
     sample_dir = os.path.join(work_dir, "samples")
@@ -69,7 +69,7 @@ def _run(rank, world_size, cfg):
             logger.info(msg)
 
     mprint(work_dir)
-    mprint(cfg)
+    mprint(config)
     device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
         mprint("Found {} CUDA devices.".format(torch.cuda.device_count()))
@@ -90,28 +90,28 @@ def _run(rank, world_size, cfg):
     # mprint('CUDA_HOME: {}'.format(os.environ['CUDA_HOME']))
 
     # build token graph
-    graph = graph_lib.get_graph(cfg, device)
+    graph = graph_lib.get_graph(config, device)
     
     # build score model
-    score_model = SEDD(cfg).to(device)
+    score_model = SEDD(config).to(device)
     score_model = DDP(score_model, device_ids=[rank], static_graph=True, find_unused_parameters=True)
 
     num_parameters = sum(p.numel() for p in score_model.parameters())
     mprint(f"Number of parameters in the model: {num_parameters}")
 
     ema = ExponentialMovingAverage(
-        score_model.parameters(), decay=cfg.training.ema)
+        score_model.parameters(), decay=config.training.ema)
     mprint(score_model)
     mprint(f"EMA: {ema}")
 
     # build noise
-    noise = noise_lib.get_noise(cfg).to(device)
+    noise = noise_lib.get_noise(config).to(device)
     noise = DDP(noise, device_ids=[rank], static_graph=True)
     sampling_eps = 1e-5
 
 
     # build optimization state
-    optimizer = losses.get_optimizer(cfg, chain(score_model.parameters(), noise.parameters()))
+    optimizer = losses.get_optimizer(config, chain(score_model.parameters(), noise.parameters()))
     mprint(f"Optimizer: {optimizer}")
     scaler = torch.amp.GradScaler('cuda')
     mprint(f"Scaler: {scaler}")
@@ -127,24 +127,35 @@ def _run(rank, world_size, cfg):
     # tokenizer = PreTrainedTokenizerFast.from_pretrained('/home/kkj/axolotl/tokenizer/tokenizer_absorb')
 
     # Build data iterators
-    train_ds, eval_ds = data.get_dataloaders(cfg)
+    train_ds, eval_ds = data.get_dataloaders(config)
 
     # mprint(f"Length of datasets: {len(train_ds)}, {len(eval_ds)}")
 
     train_iter = iter(train_ds)
     eval_iter = iter(eval_ds)
 
+    # # Test
+    # batch = next(eval_iter)['input_ids'].to(device)
+    # decoded = tokenizer.batch_decode(batch)
+    # for i, seq in enumerate(decoded):
+    #     length = len(seq)
+    #     print(i)
+    #     print("length", length)
+    #     print(seq)
+
+    # raise ValueError("Test")
+
     # Build one-step training and evaluation functions
-    optimize_fn = losses.optimization_manager(cfg)
-    train_step_fn = losses.get_step_fn(noise, graph, True, optimize_fn, cfg.training.accum)
-    eval_step_fn = losses.get_step_fn(noise, graph, False, optimize_fn, cfg.training.accum)
+    optimize_fn = losses.optimization_manager(config)
+    train_step_fn = losses.get_step_fn(noise, graph, True, optimize_fn, config.training.accum)
+    eval_step_fn = losses.get_step_fn(noise, graph, False, optimize_fn, config.training.accum)
 
 
-    if cfg.training.snapshot_sampling: # TODO: support for different length sampling
-        sampling_shape = (cfg.training.batch_size // (cfg.ngpus * cfg.training.accum), cfg.model.length)
-        sampling_fn = sampling.get_sampling_fn(cfg, graph, noise, sampling_shape, sampling_eps, device)
+    if config.training.snapshot_sampling: # TODO: support for different length sampling
+        sampling_shape = (config.training.batch_size // (config.ngpus * config.training.accum), config.model.length)
+        sampling_fn = sampling.get_sampling_fn(config, graph, noise, sampling_shape, sampling_eps, device)
 
-    num_train_steps = cfg.training.n_iters
+    num_train_steps = config.training.n_iters
     mprint(f"Starting training loop at step {initial_step}.")
 
 
@@ -157,16 +168,16 @@ def _run(rank, world_size, cfg):
 
         # flag to see if there was movement ie a full batch got computed
         if step != state['step']:
-            if step % cfg.training.log_freq == 0:
+            if step % config.training.log_freq == 0:
                 dist.all_reduce(loss)
                 loss /= world_size
 
                 mprint("step: %d, training_loss: %.5e" % (step, loss.item()))
             
-            if step % cfg.training.snapshot_freq_for_preemption == 0 and rank == 0:
+            if step % config.training.snapshot_freq_for_preemption == 0 and rank == 0:
                 utils.save_checkpoint(checkpoint_meta_dir, state)
 
-            if step % cfg.training.eval_freq == 0:
+            if step % config.training.eval_freq == 0:
 
                 eval_batch = next(eval_iter)['input_ids'].to(device)
 
@@ -177,15 +188,15 @@ def _run(rank, world_size, cfg):
 
                 mprint("step: %d, evaluation_loss: %.5e" % (step, eval_loss.item()))
 
-            if step > 0 and step % cfg.training.snapshot_freq == 0 or step == num_train_steps:
+            if step > 0 and step % config.training.snapshot_freq == 0 or step == num_train_steps:
                 # Save the checkpoint.
-                save_step = step // cfg.training.snapshot_freq
+                save_step = step // config.training.snapshot_freq
                 if rank == 0:
                     utils.save_checkpoint(os.path.join(
                         checkpoint_dir, f'checkpoint_{save_step}.pth'), state)
 
                 # Generate and save samples
-                if cfg.training.snapshot_sampling:
+                if config.training.snapshot_sampling:
                     mprint(f"Generating text at step: {step}")
 
                     this_sample_dir = os.path.join(sample_dir, "iter_{}".format(step))
@@ -204,13 +215,13 @@ def _run(rank, world_size, cfg):
                             file.write(f">sequence {i}\n")
                             file.write(seq + "\n")
 
-                    if cfg.eval.perplexity:
+                    if config.eval.perplexity:
                         with torch.no_grad():
                             eval_model = GPT2LMHeadModel.from_pretrained("gpt2-large").to(device).eval()
-                            batches = sample.shape[0] // cfg.eval.perplexity_batch_size
+                            batches = sample.shape[0] // config.eval.perplexity_batch_size
                             total_perplexity = 0
                             for i in range(batches):
-                                s = sample[i * cfg.eval.perplexity_batch_size:(i + 1) * cfg.eval.perplexity_batch_size]
+                                s = sample[i * config.eval.perplexity_batch_size:(i + 1) * config.eval.perplexity_batch_size]
                                 loss, logits = eval_model(s, labels=s)[:2]
                                 logits = logits.transpose(-1, -2)
                                 perplexity = F.cross_entropy(logits[..., :-1], s[..., 1:], reduction="none").mean(dim=-1).exp().mean()
