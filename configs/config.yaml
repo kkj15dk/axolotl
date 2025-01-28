@@ -7,7 +7,7 @@ ngpus: 1
 tokens: 23 # 23 for uniform
 
 training:
-  batch_size: 16
+  batch_size: 8
   accum: 1
   n_iters: 1300001
   snapshot_freq: 50000
@@ -19,10 +19,10 @@ training:
   ema: 0.9999
 
 data:
-  # train: /work3/s204514/datasets/IPR036736_90_grouped/train
-  # valid: /work3/s204514/datasets/IPR036736_90_grouped/valid
-  train: /home/kkj/axolotl/datasets/IPR036736_90_grouped/train
-  valid: /home/kkj/axolotl/datasets/IPR036736_90_grouped/valid
+  train: /work3/s204514/datasets/IPR036736_90_grouped/train
+  valid: /work3/s204514/datasets/IPR036736_90_grouped/valid
+  # train: /home/kkj/axolotl/datasets/IPR036736_90_grouped/train
+  # valid: /home/kkj/axolotl/datasets/IPR036736_90_grouped/valid
 
 graph:
   type: absorb
@@ -40,7 +40,7 @@ sampling:
   noise_removal: True
 
 eval:
-  batch_size: 16
+  batch_size: 8
   perplexity: False # True
   perplexity_batch_size: 32
 
@@ -57,7 +57,8 @@ optim:
 
 hydra:
   run:
-    dir: exp_local/${data.train}/${now:%Y.%m.%d}/${now:%H%M%S}
+    # dir: exp_local/${data.train}/${now:%Y.%m.%d}/${now:%H%M%S}
+    dir: exp_local/work3/s204514/datasets/IPR036736_90_grouped/train/2025.01.24/113805
   sweep:
     dir: exp/${data.train}/${now:%Y.%m.%d}/${now:%H%M%S}
     subdir: ${hydra.job.num}
