@@ -151,7 +151,7 @@ def _run(rank, world_size, config):
 
 
     if config.training.snapshot_sampling: # TODO: support for different length sampling
-        sampling_shape = (config.training.batch_size // (config.ngpus * config.training.accum), config.model.length)
+        sampling_shape = (config.training.batch_size // (config.ngpus * config.training.accum * 2), config.sampling.length)
         sampling_fn = sampling.get_sampling_fn(config, graph, noise, sampling_shape, sampling_eps, device)
 
     num_train_steps = config.training.n_iters
