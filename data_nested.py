@@ -142,9 +142,9 @@ def collate_fn(batch):
     input_ids_list = [maybe_truncate(input_ids, max_len, generator=generator) for input_ids in input_ids_list]
 
     input_ids = torch.nested.nested_tensor(input_ids_list, layout=torch.jagged)
-    labels = torch.tensor([x["label"][i] for x, i in zip(batch, indexes)])
+    label = torch.tensor([x["label"][i] for x, i in zip(batch, indexes)])
 
-    return {"input_ids": input_ids, "labels": labels}
+    return {"input_ids": input_ids, "label": label}
 
 def get_dataloaders(config, distributed=True):
     if config.training.batch_size % (config.ngpus * config.training.accum) != 0:

@@ -162,9 +162,11 @@ def _run(rank, world_size, config):
     while state['step'] < num_train_steps + 1:
         step = state['step']
 
-        batch = next(train_iter)['input_ids'].to(device)
+        batch = next(train_iter)
+        input_ids = batch['input_ids'].to(device)
+        label = batch['label'].to(device)
 
-        loss = train_step_fn(state, batch)
+        loss = train_step_fn(state, input_ids, label)
 
         # flag to see if there was movement ie a full batch got computed
         if step != state['step']:
@@ -204,7 +206,7 @@ def _run(rank, world_size, config):
 
                     ema.store(score_model.parameters())
                     ema.copy_to(score_model.parameters())
-                    sample = sampling_fn(score_model)
+                    sample, sampling_label, sampling_cfg_w = sampling_fn(score_model)
                     ema.restore(score_model.parameters())
 
                     sequences = tokenizer.batch_decode(sample)

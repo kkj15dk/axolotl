@@ -30,9 +30,9 @@ def preprocess(example: dict,
 ):
     sequence = example[sequence_key]
     label = example[label_key]
-    if label == 2:
+    if label == 2: # Prokaryotic
         label = 0
-    elif label == 2759:
+    elif label == 2759: # Eukaryotic
         label = 1
     else:
         raise ValueError(f"Invalid label: {label}")

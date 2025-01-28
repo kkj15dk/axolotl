@@ -38,6 +38,8 @@ sampling:
   predictor: euler
   steps: 128
   noise_removal: True
+  cfg: 1 # cfg = 0 => unconditional. cfg = 1 => conditional. 0 < cfg < 1 => interpolation. cfg > 1 => extrapolation.
+  label: 'random' # one of 'random', 'eukaryotic', 'prokaryotic'. 'Random' gives a mix of eukaryotic and prokaryotic labels
 
 eval:
   batch_size: 8

@@ -40,3 +40,15 @@ def expand_using_offsets(tensor, offsets):
     expanded_tensor = torch.cat(expanded_segments, dim=0)
     
     return expanded_tensor
+
+def padded_from_jagged(tensor, pad_value=0.0):
+    offsets = tensor.offsets()
+    padded = torch.nested.to_padded_tensor(tensor, padding=pad_value)
+    return padded, offsets
+
+def jagged_from_padded(tensor, offsets, contiguous=True):
+    seq_lens = offsets.diff()
+    jagged = torch.nested.narrow(tensor, dim=1, start=0, length=seq_lens, layout=torch.jagged)
+    if contiguous:
+        jagged = jagged.contiguous()
+    return jagged
