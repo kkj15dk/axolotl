@@ -225,7 +225,7 @@ def _run(rank, world_size, config):
                                 w = sampling_cfg_w[i].item()
                             else:
                                 w = sampling_cfg_w
-                            file.write(f">sequence{i} | label: {sequence_label} | cfg_w: {w}\n")
+                            file.write(f">{i} | label: {sequence_label} | cfg_w: {w}\n")
                             file.write(seq + "\n")
 
                     if config.eval.perplexity:
