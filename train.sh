@@ -1,8 +1,8 @@
 #!/bin/sh 
 ### General options 
 ### -- specify queue -- 
-#BSUB -q gpuv100
-#BSUB -R "select[gpu32gb]"
+#BSUB -q gpua100
+###BSUB -R "select[gpu32gb]"
 ### -- set the job Name -- 
 #BSUB -J train_DiT
 ### -- ask for number of cores (default: 4) -- 
@@ -24,10 +24,8 @@
 #BSUB -o Logs/%J.out 
 #BSUB -e Logs/%J.err 
 
-module load cuda/12.6.3
 module load python3/3.13.0
-
 source .venv/bin/activate
 
 # here follow the commands you want to execute
-python3 train.py training.batch_size=64 eval.batch_size=64
+python3 axolotl/train.py training.batch_size=64 eval.batch_size=64

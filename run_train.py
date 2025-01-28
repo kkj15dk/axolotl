@@ -123,8 +123,8 @@ def _run(rank, world_size, cfg):
     initial_step = int(state['step'])
 
     # load in tokenizer
-    # tokenizer = PreTrainedTokenizerFast.from_pretrained('/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb')
-    tokenizer = PreTrainedTokenizerFast.from_pretrained('/home/kkj/axolotl/tokenizer/tokenizer_absorb')    
+    tokenizer = PreTrainedTokenizerFast.from_pretrained('/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb')
+    # tokenizer = PreTrainedTokenizerFast.from_pretrained('/home/kkj/axolotl/tokenizer/tokenizer_absorb')
 
     # Build data iterators
     train_ds, eval_ds = data.get_dataloaders(cfg)
@@ -196,13 +196,13 @@ def _run(rank, world_size, cfg):
                     sample = sampling_fn(score_model)
                     ema.restore(score_model.parameters())
 
-                    sentences = tokenizer.batch_decode(sample)
+                    sequences = tokenizer.batch_decode(sample)
                     
                     file_name = os.path.join(this_sample_dir, f"sample_{rank}.txt")
                     with open(file_name, 'w') as file:
-                        for sentence in sentences:
-                            file.write(sentence + "\n")
-                            file.write("============================================================================================\n")
+                        for i, seq in enumerate(sequences):
+                            file.write(f">sequence {i}\n")
+                            file.write(seq + "\n")
 
                     if cfg.eval.perplexity:
                         with torch.no_grad():
