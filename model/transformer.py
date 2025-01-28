@@ -20,7 +20,7 @@ from .fused_add_dropout_scale import (
 
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
-from utils_nested import packed_tensor_from_jagged, jagged_from_packed_tensor, coerce_offsets, expand_using_offsets
+from utils_nested import packed_tensor_from_jagged, jagged_from_packed_tensor, coerce_offsets, expand_using_offsets, padded_from_jagged, jagged_from_padded
 
 def modulate(x, shift, scale):
 
@@ -102,17 +102,33 @@ class LabelEmbedder(nn.Module):
     """
     Embeds class labels into vector representations. Also handles label dropout for classifier-free guidance.
     """
-    def __init__(self, num_classes, cond_size):
+    def __init__(self, num_classes, dim, dropout_prob):
         super().__init__()
-        self.embedding_table = nn.Embedding(num_classes + 1, cond_size)
+        use_cfg_embedding = dropout_prob > 0
+        self.embedding_table = nn.Embedding(num_classes + use_cfg_embedding, dim)
         self.num_classes = num_classes
+        self.dropout_prob = dropout_prob
 
         # TODO think of initializing with 0.02 std deviation like in original DiT paper
 
-    def forward(self, labels):
+    def token_drop(self, labels, force_drop_ids=None):
+        """
+        Drops labels to enable classifier-free guidance.
+        """
+        if force_drop_ids is None:
+            drop_ids = torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
+        else:
+            drop_ids = force_drop_ids == 1
+        labels = torch.where(drop_ids, self.num_classes, labels)
+        return labels
+
+    def forward(self, labels, train, force_drop_ids=None):
+        use_dropout = train and (self.dropout_prob > 0) # If we have a dropout prob and we are in training mode, then use dropout
+        if use_dropout or (force_drop_ids is not None): # If we are using dropout or we are forcing dropout
+            labels = self.token_drop(labels, force_drop_ids)
         embeddings = self.embedding_table(labels)
         return embeddings
-    
+
 
 #################################################################################
 #                                 Core Model                                    #
@@ -142,7 +158,7 @@ class DDiTBlock(nn.Module):
         self.adaLN_modulation.bias.data.zero_()
 
 
-    def forward(self, x, rotary_cos_sin, c, seqlens=None):
+    def forward(self, x, rotary_cos_sin, c):
         batch_size, max_seq_len = x.shape[0], rotary_cos_sin[0].shape[1]
 
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).unsqueeze(1).chunk(6, dim=2)
@@ -154,12 +170,21 @@ class DDiTBlock(nn.Module):
 
         qkv = self.attn_qkv(x)
         qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
+
+        if qkv.is_nested:
+            qkv, offsets = padded_from_jagged(qkv)
+        else:
+            offsets = None
+
         with torch.amp.autocast('cuda', enabled=False):
             cos, sin = rotary_cos_sin
             qkv = rotary.apply_rotary_pos_emb(
                 qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
             )
         
+        if offsets is not None:
+            qkv = jagged_from_padded(qkv, offsets, contiguous=True)
+
         q, k, v = qkv.chunk(3, dim=-3)
         q, k, v = q.squeeze(-3), k.squeeze(-3), v.squeeze(-3)
         q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
@@ -242,8 +267,10 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
 
         self.absorb = config.graph.type == "absorb"
         vocab_size = config.tokens + (1 if self.absorb else 0)
+        self.num_labels = config.model.num_labels
 
         self.vocab_embed = EmbeddingLayer(config.model.hidden_size, vocab_size)
+        self.label_embed = LabelEmbedder(config.model.num_labels, config.model.cond_dim, config.model.label_dropout)
         self.sigma_map = TimestepEmbedder(config.model.cond_dim)
         self.rotary_emb = rotary.Rotary(config.model.hidden_size // config.model.n_heads)
 
@@ -263,16 +290,18 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         )
 
 
-    def forward(self, indices, sigma):
+    def forward(self, indices, sigma, label):
 
         x = self.vocab_embed(indices)
-        c = F.silu(self.sigma_map(sigma))
+        sigma_embed = F.silu(self.sigma_map(sigma))
+        label_embed = F.silu(self.label_embed(label, self.training)) #TODO: is this an appropriate way to add label embeddings?
+        c = sigma_embed + label_embed
 
         rotary_cos_sin = self.rotary_emb(x)
 
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
             for i in range(len(self.blocks)):
-                x = self.blocks[i](x, rotary_cos_sin, c, seqlens=None)
+                x = self.blocks[i](x, rotary_cos_sin, c)
 
             x = self.output_layer(x, c)
 

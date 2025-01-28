@@ -10,7 +10,7 @@ import timeit
 
 def get_loss_fn(noise, graph: graph_lib.Graph, train, sampling_eps=1e-3, lv=False):
 
-    def loss_fn(model, batch, cond=None, t=None, perturbed_batch=None):
+    def loss_fn(model, input_ids, label, t=None, perturbed_batch=None):
         """
         Batch shape: [B, L] int. D given from graph
         """
@@ -19,16 +19,16 @@ def get_loss_fn(noise, graph: graph_lib.Graph, train, sampling_eps=1e-3, lv=Fals
             if lv:
                 raise NotImplementedError("Yeah I gotta do this later")
             else:
-                t = (1 - sampling_eps) * torch.rand(batch.shape[0], device=batch.device) + sampling_eps
+                t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
             
         sigma, dsigma = noise(t)
         
         if perturbed_batch is None:
-            perturbed_batch = graph.sample_transition(batch, sigma[:, None])
+            perturbed_batch = graph.sample_transition(input_ids, sigma[:, None])
 
         log_score_fn = mutils.get_score_fn(model, train=train, sampling=False)
-        log_score = log_score_fn(perturbed_batch, sigma)
-        loss = graph.score_entropy(log_score, sigma[:, None], perturbed_batch, batch) # loss shape: (B, j1)
+        log_score = log_score_fn(perturbed_batch, sigma, label)
+        loss = graph.score_entropy(log_score, sigma[:, None], perturbed_batch, input_ids) # loss shape: (B, j1)
 
         if log_score.is_nested:
             loss = (dsigma[:, None] * loss)
@@ -86,7 +86,7 @@ def get_step_fn(noise, graph, train, optimize_fn, accum):
     accum_iter = 0
     total_loss = 0
 
-    def step_fn(state, batch, cond=None):
+    def step_fn(state, input_ids, label):
         nonlocal accum_iter 
         nonlocal total_loss
 
@@ -110,7 +110,7 @@ def get_step_fn(noise, graph, train, optimize_fn, accum):
         if train:
             optimizer = state['optimizer']
             scaler = state['scaler']
-            loss = loss_fn(model, batch, cond=cond).mean() / accum
+            loss = loss_fn(model, input_ids, label).mean() / accum
 
             # graph = make_dot(loss_fn(model, batch, cond=cond).mean() / accum, params=dict(model.named_parameters()))
             # graph.render("graph")
@@ -137,7 +137,7 @@ def get_step_fn(noise, graph, train, optimize_fn, accum):
                 ema = state['ema']
                 ema.store(model.parameters())
                 ema.copy_to(model.parameters())
-                loss = loss_fn(model, batch, cond=cond).mean()
+                loss = loss_fn(model, input_ids, label).mean()
                 ema.restore(model.parameters())
 
         return loss
