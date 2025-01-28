@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from catsample import sample_categorical
 
 from model import utils as mutils
-from typing import Optional
+from typing import Optional, Union
 
 _PREDICTORS = {}
 
@@ -33,10 +33,12 @@ def get_predictor(name):
     return _PREDICTORS[name]
 
 
-def classifier_free_guidance(score, cfg_w):
+def classifier_free_guidance(score, cfg_w: Union[int, torch.Tensor]):
     """Guidance for classifier-free sampling."""
     
     n = score.shape[0] // 2
+    if isinstance(cfg_w, torch.Tensor):
+        assert cfg_w.shape[0] == n, f'cfg_w must have length {n}, got {cfg_w.shape[0]}'
 
     cond_score = score[:n]
     uncond_score = score[n:]
@@ -55,7 +57,7 @@ class Predictor(abc.ABC):
         self.noise = noise
 
     @abc.abstractmethod
-    def update_fn(self, score_fn, x, t, step_size, label, cfg_w=None):
+    def update_fn(self, score_fn, x, t, step_size, label, cfg_w):
         """One update of the predictor.
 
         Args:
@@ -71,11 +73,11 @@ class Predictor(abc.ABC):
 
 @register_predictor(name="euler")
 class EulerPredictor(Predictor):
-    def update_fn(self, score_fn, x, t, step_size, label, cfg_w=None):
+    def update_fn(self, score_fn, x, t, step_size, label, cfg_w):
         sigma, dsigma = self.noise(t)
         score = score_fn(x, sigma, label)
 
-        if cfg_w is not None:
+        if (cfg_w != 0) and (cfg_w != 1):
             score = classifier_free_guidance(score, cfg_w)
 
         rev_rate = step_size * dsigma[..., None] * self.graph.reverse_rate(x, score)
@@ -84,20 +86,20 @@ class EulerPredictor(Predictor):
 
 @register_predictor(name="none")
 class NonePredictor(Predictor):
-    def update_fn(self, score_fn, x, t, step_size, label, cfg_w=None):
+    def update_fn(self, score_fn, x, t, step_size, label, cfg_w):
         return x
 
 
 @register_predictor(name="analytic")
 class AnalyticPredictor(Predictor):
-    def update_fn(self, score_fn, x, t, step_size, label, cfg_w=None):
+    def update_fn(self, score_fn, x, t, step_size, label, cfg_w):
         curr_sigma = self.noise(t)[0]
         next_sigma = self.noise(t - step_size)[0]
         dsigma = curr_sigma - next_sigma
 
         score = score_fn(x, curr_sigma, label)
 
-        if cfg_w is not None:
+        if (cfg_w != 0) and (cfg_w != 1):
             score = classifier_free_guidance(score, cfg_w)
 
         stag_score = self.graph.staggered_score(score, dsigma)
@@ -110,12 +112,12 @@ class Denoiser:
         self.graph = graph
         self.noise = noise
 
-    def update_fn(self, score_fn, x, t, label, cfg_w=None):
+    def update_fn(self, score_fn, x, t, label, cfg_w):
         sigma = self.noise(t)[0]
 
         score = score_fn(x, sigma, label)
 
-        if cfg_w is not None:
+        if (cfg_w != 0) and (cfg_w != 1):
             score = classifier_free_guidance(score, cfg_w)
 
         stag_score = self.graph.staggered_score(score, sigma)
@@ -138,40 +140,42 @@ def get_sampling_fn(config, graph, noise, batch_dims, eps, device):
                                  denoise=config.sampling.noise_removal,
                                  eps=eps,
                                  device=device,
-                                 cfg=config.sampling.cfg,
+                                 cfg_w=config.sampling.cfg_w,
                                  label=config.sampling.label,
     )
     
     return sampling_fn
     
 
-def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps=1e-5, device=torch.device('cpu'), proj_fun=lambda x: x, cfg: int=1, label: str=None):
+def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps=1e-5, device=torch.device('cpu'), proj_fun=lambda x: x, cfg_w: Union[float, str] = 1, label: str=None):
     predictor = get_predictor(predictor)(graph, noise)
     projector = proj_fun
     denoiser = Denoiser(graph, noise)
 
     @torch.no_grad()
     def pc_sampler(model):
+        batch_size = batch_dims[0]
         if label == 'prokaryotic': # prokaryotic = 0
-            input_label = torch.zeros(batch_dims[0], device=device, dtype=torch.long)
+            input_label = torch.zeros(batch_size, device=device, dtype=torch.long)
         elif label == 'eukaryotic': # eukaryotic = 1
-            input_label = torch.ones(batch_dims[0], device=device, dtype=torch.long)
+            input_label = torch.ones(batch_size, device=device, dtype=torch.long)
         elif label == 'random':
-            input_label = torch.randint(0, 2, (batch_dims[0],), device=device, dtype=torch.long)
+            input_label = torch.randint(0, model.num_labels, (batch_size,), device=device, dtype=torch.long)
         else:
             raise ValueError(f"Invalid label: {label}")
         
 
-        if cfg == 0: # unconditional sampling
-            input_label = model.num_labels * torch.ones(batch_dims[0], device=device, dtype=torch.long)
+        if cfg_w == 0: # unconditional sampling
+            input_label = model.num_labels * torch.ones(batch_size, device=device, dtype=torch.long)
             use_cfg = False
-            cfg_w = None
-        elif cfg == 1: # conditional sampling
+        elif cfg_w == 1: # conditional sampling
             use_cfg = False # Now need for interpolation at cfg_w = 1
-            cfg_w = None
         else: # We are interpolating or extrapolating
             use_cfg = True
-            cfg_w = cfg
+            if cfg_w == 'testing':
+                cfg_w = torch.cat([torch.tensor([0], device=device), torch.tensor([1], device=device), torch.linspace(0.5, 10, batch_size - 2, device=device)])
+            else:
+                assert isinstance(cfg_w, float), f'cfg must be an float or "testing", got {cfg_w}'
 
 
         sampling_score_fn = mutils.get_score_fn(model, train=False, sampling=True, use_cfg=use_cfg)
@@ -191,7 +195,7 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
             t = timesteps[-1] * torch.ones(x.shape[0], 1, device=device)
             x = denoiser.update_fn(sampling_score_fn, x, t, input_label, cfg_w)
             
-        return x, input_label, cfg
+        return x, input_label, cfg_w
     
     return pc_sampler
 

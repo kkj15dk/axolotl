@@ -22,8 +22,8 @@ def coerce_offsets(src, tgt):
         tgt.offsets(),
         None,
         src._ragged_idx,
-        mb_get_size(src._max_seqlen_tensor) if tgt._max_seqlen_tensor is None else mb_get_size(src._max_seqlen_tensor),
-        mb_get_size(src._min_seqlen_tensor) if tgt._min_seqlen_tensor is None else mb_get_size(src._min_seqlen_tensor),
+        mb_get_size(src._min_seqlen_tensor) if tgt._min_seqlen_tensor is None else mb_get_size(tgt._min_seqlen_tensor),
+        mb_get_size(src._max_seqlen_tensor) if tgt._max_seqlen_tensor is None else mb_get_size(tgt._max_seqlen_tensor),
     )
 
 def expand_using_offsets(tensor, offsets):
@@ -48,7 +48,10 @@ def padded_from_jagged(tensor, pad_value=0.0):
 
 def jagged_from_padded(tensor, offsets, contiguous=True):
     seq_lens = offsets.diff()
+    print(seq_lens)
+    
     jagged = torch.nested.narrow(tensor, dim=1, start=0, length=seq_lens, layout=torch.jagged)
     if contiguous:
         jagged = jagged.contiguous()
+
     return jagged

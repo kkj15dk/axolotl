@@ -37,6 +37,16 @@ class Rotary(torch.nn.Module):
             # This makes the transformation on v an identity.
             self.cos_cached[:,:,2,:,:].fill_(1.)
             self.sin_cached[:,:,2,:,:].fill_(0.)
+        
+        if x.is_nested:
+            cos = self.cos_cached.squeeze(0)
+            sin = self.sin_cached.squeeze(0)
+            nested_cos_list = [cos[:n] for n in x.offsets().diff()]
+            nested_sin_list = [sin[:n] for n in x.offsets().diff()]
+            nested_sin = torch.nested.as_nested_tensor(nested_sin_list, device=x.device, layout=torch.jagged)
+            nested_cos = torch.nested.as_nested_tensor(nested_cos_list, device=x.device, layout=torch.jagged)
+            return nested_cos, nested_sin
+
         return self.cos_cached, self.sin_cached
 
     def forward(self, x, offsets=None):
@@ -73,16 +83,16 @@ def rotate_half(x):
 # def _apply_rotary_pos_emb_torchscript(qkv, cos, sin):
 def _apply_rotary_pos_emb(qkv, cos, sin): # qkv shape: (B, j1, 3, n_heads, head_dim), cos & sin shape: (1, j1.max(), 1, head_dim)
 
-    if qkv.is_nested:
+    # if qkv.is_nested:
 
-        cos = cos.squeeze(0)
-        sin = sin.squeeze(0)
+    #     cos = cos.squeeze(0)
+    #     sin = sin.squeeze(0)
 
-        # slow list comprehension TODO: optimize
-        result_list = [(t * cos[:t.shape[0]]) + (rotate_half(t) * sin[:t.shape[0]]) for t in qkv.unbind()]
+    #     # slow list comprehension TODO: optimize
+    #     result_list = [(t * cos[:t.shape[0]]) + (rotate_half(t) * sin[:t.shape[0]]) for t in qkv.unbind()]
          
-        # Reassemble the list of tensors back into a nested tensor
-        return torch.nested.as_nested_tensor(result_list, layout=torch.jagged)
+    #     # Reassemble the list of tensors back into a nested tensor
+    #     return torch.nested.as_nested_tensor(result_list, layout=torch.jagged)
 
     return (qkv * cos) + (rotate_half(qkv) * sin)
 

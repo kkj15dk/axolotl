@@ -123,8 +123,7 @@ def _run(rank, world_size, config):
     initial_step = int(state['step'])
 
     # load in tokenizer
-    tokenizer = PreTrainedTokenizerFast.from_pretrained('/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb')
-    # tokenizer = PreTrainedTokenizerFast.from_pretrained('/home/kkj/axolotl/tokenizer/tokenizer_absorb')
+    tokenizer = PreTrainedTokenizerFast.from_pretrained(config.data.tokenizer_path)
 
     # Build data iterators
     train_ds, eval_ds = data.get_dataloaders(config)
@@ -181,9 +180,11 @@ def _run(rank, world_size, config):
 
             if step % config.training.eval_freq == 0:
 
-                eval_batch = next(eval_iter)['input_ids'].to(device)
+                eval_batch = next(eval_iter)
+                eval_input_ids = eval_batch['input_ids'].to(device)
+                eval_label = eval_batch['label'].to(device)
 
-                eval_loss = eval_step_fn(state, eval_batch)
+                eval_loss = eval_step_fn(state, eval_input_ids, eval_label)
 
                 dist.all_reduce(eval_loss)
                 eval_loss /= world_size
@@ -214,7 +215,17 @@ def _run(rank, world_size, config):
                     file_name = os.path.join(this_sample_dir, f"sample_{rank}.txt")
                     with open(file_name, 'w') as file:
                         for i, seq in enumerate(sequences):
-                            file.write(f">sequence {i}\n")
+                            if sampling_label[i] == 0:
+                                sequence_label = "prokaryotic"
+                            elif sampling_label[i] == 1:
+                                sequence_label = "eukaryotic"
+                            else:
+                                raise ValueError(f"Invalid label: {sampling_label[i]}")
+                            if isinstance(sampling_cfg_w, torch.Tensor):
+                                w = sampling_cfg_w[i].item()
+                            else:
+                                w = sampling_cfg_w
+                            file.write(f">sequence{i} | label: {sequence_label} | cfg_w: {w}\n")
                             file.write(seq + "\n")
 
                     if config.eval.perplexity:

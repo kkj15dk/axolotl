@@ -171,19 +171,14 @@ class DDiTBlock(nn.Module):
         qkv = self.attn_qkv(x)
         qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
 
-        if qkv.is_nested:
-            qkv, offsets = padded_from_jagged(qkv)
-        else:
-            offsets = None
-
         with torch.amp.autocast('cuda', enabled=False):
             cos, sin = rotary_cos_sin
+            if qkv.is_nested:
+                cos = coerce_offsets(cos, qkv)
+                sin = coerce_offsets(sin, qkv)
             qkv = rotary.apply_rotary_pos_emb(
                 qkv, cos.to(qkv.dtype), sin.to(qkv.dtype)
             )
-        
-        if offsets is not None:
-            qkv = jagged_from_padded(qkv, offsets, contiguous=True)
 
         q, k, v = qkv.chunk(3, dim=-3)
         q, k, v = q.squeeze(-3), k.squeeze(-3), v.squeeze(-3)
