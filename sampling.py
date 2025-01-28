@@ -33,12 +33,18 @@ def get_predictor(name):
     return _PREDICTORS[name]
 
 
-def classifier_free_guidance(score, cfg_w: Union[int, torch.Tensor]):
+def classifier_free_guidance(score, cfg_w: Union[float, torch.Tensor]):
     """Guidance for classifier-free sampling."""
     
+    if isinstance(cfg_w, float):
+        if (cfg_w == 0) or (cfg_w == 1): # no guidance needed. The fact that we do not need to double the batch is handled elsewhere
+            return score
+
     n = score.shape[0] // 2
     if isinstance(cfg_w, torch.Tensor):
+        assert cfg_w.dim() == 1, f'cfg_w must be a 1D tensor, got {cfg_w.dim()}'
         assert cfg_w.shape[0] == n, f'cfg_w must have length {n}, got {cfg_w.shape[0]}'
+        cfg_w = cfg_w.unsqueeze(-1).unsqueeze(-1)
 
     cond_score = score[:n]
     uncond_score = score[n:]
@@ -77,8 +83,7 @@ class EulerPredictor(Predictor):
         sigma, dsigma = self.noise(t)
         score = score_fn(x, sigma, label)
 
-        if (cfg_w != 0) and (cfg_w != 1):
-            score = classifier_free_guidance(score, cfg_w)
+        score = classifier_free_guidance(score, cfg_w)
 
         rev_rate = step_size * dsigma[..., None] * self.graph.reverse_rate(x, score)
         x = self.graph.sample_rate(x, rev_rate)
@@ -99,8 +104,7 @@ class AnalyticPredictor(Predictor):
 
         score = score_fn(x, curr_sigma, label)
 
-        if (cfg_w != 0) and (cfg_w != 1):
-            score = classifier_free_guidance(score, cfg_w)
+        score = classifier_free_guidance(score, cfg_w)
 
         stag_score = self.graph.staggered_score(score, dsigma)
         probs = stag_score * self.graph.transp_transition(x, dsigma)
@@ -117,8 +121,7 @@ class Denoiser:
 
         score = score_fn(x, sigma, label)
 
-        if (cfg_w != 0) and (cfg_w != 1):
-            score = classifier_free_guidance(score, cfg_w)
+        score = classifier_free_guidance(score, cfg_w)
 
         stag_score = self.graph.staggered_score(score, sigma)
         probs = stag_score * self.graph.transp_transition(x, sigma)
@@ -140,14 +143,27 @@ def get_sampling_fn(config, graph, noise, batch_dims, eps, device):
                                  denoise=config.sampling.noise_removal,
                                  eps=eps,
                                  device=device,
-                                 cfg_w=config.sampling.cfg_w,
+                                 cfg=config.sampling.cfg,
                                  label=config.sampling.label,
+                                 num_labels=config.num_labels,
     )
     
     return sampling_fn
     
 
-def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps=1e-5, device=torch.device('cpu'), proj_fun=lambda x: x, cfg_w: Union[float, str] = 1, label: str=None):
+def get_pc_sampler(graph, 
+                   noise, 
+                   batch_dims, 
+                   predictor, 
+                   steps, 
+                   denoise=True, 
+                   eps=1e-5, 
+                   device=torch.device('cpu'), 
+                   proj_fun=lambda x: x, 
+                   cfg: Union[float, str]=1, 
+                   label: str=None, 
+                   num_labels: int=2,
+):
     predictor = get_predictor(predictor)(graph, noise)
     projector = proj_fun
     denoiser = Denoiser(graph, noise)
@@ -160,13 +176,14 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
         elif label == 'eukaryotic': # eukaryotic = 1
             input_label = torch.ones(batch_size, device=device, dtype=torch.long)
         elif label == 'random':
-            input_label = torch.randint(0, model.num_labels, (batch_size,), device=device, dtype=torch.long)
+            input_label = torch.randint(0, num_labels, (batch_size,), device=device, dtype=torch.long)
         else:
             raise ValueError(f"Invalid label: {label}")
         
+        cfg_w = cfg # cfg weight
 
         if cfg_w == 0: # unconditional sampling
-            input_label = model.num_labels * torch.ones(batch_size, device=device, dtype=torch.long)
+            input_label = num_labels * torch.ones(batch_size, device=device, dtype=torch.long)
             use_cfg = False
         elif cfg_w == 1: # conditional sampling
             use_cfg = False # Now need for interpolation at cfg_w = 1
@@ -178,7 +195,7 @@ def get_pc_sampler(graph, noise, batch_dims, predictor, steps, denoise=True, eps
                 assert isinstance(cfg_w, float), f'cfg must be an float or "testing", got {cfg_w}'
 
 
-        sampling_score_fn = mutils.get_score_fn(model, train=False, sampling=True, use_cfg=use_cfg)
+        sampling_score_fn = mutils.get_score_fn(model, train=False, sampling=True, use_cfg=use_cfg, num_labels=num_labels)
         x = graph.sample_limit(*batch_dims).to(device)
         timesteps = torch.linspace(1, eps, steps + 1, device=device)
         dt = (1 - eps) / steps

@@ -36,7 +36,7 @@ def get_model_fn(model, train=False):
     return model_fn
 
 
-def get_score_fn(model, train=False, sampling=False, use_cfg=False):
+def get_score_fn(model, train=False, sampling=False, use_cfg=False, num_labels=None):
     if sampling:
         assert not train, "Must sample in eval mode"
     model_fn = get_model_fn(model, train=train)
@@ -45,9 +45,10 @@ def get_score_fn(model, train=False, sampling=False, use_cfg=False):
         def score_fn(x, sigma, label):
 
             if use_cfg: # use classifier-free guidance for sampling
+                assert num_labels is not None, "Must provide num_labels if using cfg"
                 x = torch.cat([x,x], dim=0)
                 sigma = torch.cat([sigma, sigma], dim=0)
-                uncond = torch.ones_like(label, dtype=torch.long) * model.num_labels
+                uncond = torch.ones_like(label, dtype=torch.long) * num_labels
                 label = torch.cat([label, uncond], dim=0)
 
             sigma = sigma.reshape(-1)
