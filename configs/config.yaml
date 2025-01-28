@@ -41,6 +41,7 @@ noise:
 sampling:
   predictor: euler
   steps: 128
+  length: 2048
   noise_removal: True
   cfg: 'testing' # cfg_w = 0 => unconditional. cfg_w = 1 => conditional. 0 < cfg_w < 1 => interpolation. cfg_w > 1 => extrapolation. cfg_w = 'testing' => testing different cfg_w at once
   label: 'random' # one of 'random', 'eukaryotic', 'prokaryotic'. 'random' gives a mix of eukaryotic and prokaryotic labels

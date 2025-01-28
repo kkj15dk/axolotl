@@ -132,7 +132,7 @@ def maybe_truncate(input_ids, max_len, generator=None):
 
 def collate_fn(batch):
     generator = None # TODO: add generator for deterministic evaluation
-    max_len = 1024 # TODO: move this to config while still making it possible to pickle this function
+    max_len = 4096 # TODO: move this to config while still making it possible to pickle this function
 
     cluster_sizes = [len(x["input_ids"]) for x in batch]
     indexes = [torch.randint(low=0, high=s, size=(1,), generator=generator) for s in cluster_sizes]
