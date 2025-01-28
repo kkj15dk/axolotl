@@ -152,8 +152,8 @@ def get_dataloaders(config, distributed=True):
     if config.eval.batch_size % (config.ngpus * config.training.accum) != 0:
         raise ValueError(f"Eval Batch Size for {config.eval.batch_size} is not divisible by {config.ngpus} gpus with accumulation {config.training.accum}.")
 
-    train_set = get_dataset(config.data.train)
-    valid_set = get_dataset(config.data.valid)
+    train_set = get_dataset(config.data.train_path)
+    valid_set = get_dataset(config.data.valid_path)
 
     if distributed:
         train_sampler = DistributedSampler(train_set) 

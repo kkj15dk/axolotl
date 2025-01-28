@@ -10,7 +10,7 @@ training:
   batch_size: 8
   accum: 1
   n_iters: 1300001
-  snapshot_freq: 50000
+  snapshot_freq: 100 # 50000
   log_freq: 50
   eval_freq: 100
   snapshot_freq_for_preemption: 10000
@@ -19,10 +19,13 @@ training:
   ema: 0.9999
 
 data:
-  train: /work3/s204514/datasets/IPR036736_90_grouped/train
-  valid: /work3/s204514/datasets/IPR036736_90_grouped/valid
-  # train: /home/kkj/axolotl/datasets/IPR036736_90_grouped/train
-  # valid: /home/kkj/axolotl/datasets/IPR036736_90_grouped/valid
+  name: IPR036736_90_grouped
+  # train_path: /work3/s204514/datasets/IPR036736_90_grouped/train
+  # valid_path: /work3/s204514/datasets/IPR036736_90_grouped/valid
+  # tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb'
+  train_path: /home/kkj/axolotl/datasets/IPR036736_90_grouped/train
+  valid_path: /home/kkj/axolotl/datasets/IPR036736_90_grouped/valid
+  tokenizer_path: '/home/kkj/axolotl/tokenizer/tokenizer_absorb'
 
 graph:
   type: absorb
@@ -38,8 +41,8 @@ sampling:
   predictor: euler
   steps: 128
   noise_removal: True
-  cfg: 1 # cfg = 0 => unconditional. cfg = 1 => conditional. 0 < cfg < 1 => interpolation. cfg > 1 => extrapolation.
-  label: 'random' # one of 'random', 'eukaryotic', 'prokaryotic'. 'Random' gives a mix of eukaryotic and prokaryotic labels
+  cfg_w: 'testing' # cfg_w = 0 => unconditional. cfg_w = 1 => conditional. 0 < cfg_w < 1 => interpolation. cfg_w > 1 => extrapolation. cfg_w = 'testing' => testing different cfg_w at once
+  label: 'random' # one of 'random', 'eukaryotic', 'prokaryotic'. 'random' gives a mix of eukaryotic and prokaryotic labels
 
 eval:
   batch_size: 8
@@ -59,10 +62,10 @@ optim:
 
 hydra:
   run:
-    # dir: exp_local/${data.train}/${now:%Y.%m.%d}/${now:%H%M%S}
-    dir: exp_local/work3/s204514/datasets/IPR036736_90_grouped/train/2025.01.24/113805
+    dir: exp_local/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
+    # dir: exp_local/work3/s204514/datasets/IPR036736_90_grouped/train/2025.01.24/113805
   sweep:
-    dir: exp/${data.train}/${now:%Y.%m.%d}/${now:%H%M%S}
+    dir: exp/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
     subdir: ${hydra.job.num}
   launcher:
     # max_num_timeout: 100000
