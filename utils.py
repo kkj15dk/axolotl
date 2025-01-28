@@ -6,9 +6,9 @@ from omegaconf import OmegaConf, open_dict
 
 
 def load_hydra_config_from_run(load_dir):
-    cfg_path = os.path.join(load_dir, ".hydra/config.yaml")
-    cfg = OmegaConf.load(cfg_path)
-    return cfg
+    config_path = os.path.join(load_dir, ".hydra/config.yaml")
+    config = OmegaConf.load(config_path)
+    return config
 
 
 def makedirs(dirname):

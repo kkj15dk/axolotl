@@ -174,7 +174,7 @@ class DDiTBlock(nn.Module):
         x = modulate(x, None, gate_msa)
         x = self.dropout(x)
         if x_skip.is_nested:
-            x_skip = coerce_offsets(x_skip, x) # TODO: should be fixed in a future release, so you don't have to coerce the offsets
+            x_skip = coerce_offsets(x_skip, x) # TODO: should be fixed in a future pytorch release so you don't have to coerce the offsets
         x = x + x_skip
 
         # mlp operation
@@ -184,7 +184,7 @@ class DDiTBlock(nn.Module):
         x = modulate(x, None, gate_mlp)
         x = self.dropout(x)
         if x_skip.is_nested:
-            x_skip = coerce_offsets(x_skip, x) # TODO: should be fixed in a future release, so you don't have to coerce the offsets
+            x_skip = coerce_offsets(x_skip, x) # TODO: should be fixed in a future pytorch release so you don't have to coerce the offsets
         x = x + x_skip
 
         return x
