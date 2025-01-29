@@ -10,6 +10,7 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.types import RunMode
 from omegaconf import OmegaConf, open_dict
 
+
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(config):
     ngpus = config.ngpus
@@ -29,7 +30,6 @@ def main(config):
     with open_dict(config):
         config.ngpus = ngpus
         config.work_dir = work_dir
-        config.wandb_name = os.path.basename(os.path.normpath(work_dir))
 
 	# Run the training pipeline
     port = int(np.random.randint(10000, 20000))

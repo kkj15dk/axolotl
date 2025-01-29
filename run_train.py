@@ -20,7 +20,8 @@ import utils
 from model import SEDD
 from model.ema import ExponentialMovingAverage
 from transformers import GPT2TokenizerFast, GPT2LMHeadModel, PreTrainedTokenizerFast
-
+import wandb
+from omegaconf import OmegaConf
 
 torch.backends.cudnn.benchmark = True
 # torch.autograd.set_detect_anomaly(True)
@@ -29,6 +30,11 @@ torch.backends.cudnn.benchmark = True
 def setup(rank, world_size, port):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
+    # Set environment variable by reading from secret file
+    # This is a good practice to avoid exposing your API key
+    # You can also set this in your bashrc or zshrc file
+    with open("secret.txt", "r") as f:
+        os.environ['WANDB_API_KEY'] = f.read().strip()
 
     # initialize the process group
     dist.init_process_group(
@@ -61,13 +67,24 @@ def _run(rank, world_size, config):
         utils.makedirs(checkpoint_dir)
         utils.makedirs(os.path.dirname(checkpoint_meta_dir))
 
+
     # logging
     if rank == 0:
         logger = utils.get_logger(os.path.join(work_dir, "logs"))
+        run = wandb.init(
+            entity=config.wandb.entity,
+            project=config.wandb.project,
+            config=OmegaConf.to_container(config)
+        )
+
     def mprint(msg):
         if rank == 0:
             logger.info(msg)
-
+    def mlog(dict, step):
+        if rank == 0:
+            run.log(dict, step=step)
+    
+    mprint(f"wandb initiated with run id: {run.id} and run name: {run.name}")
     mprint(work_dir)
     mprint(config)
     device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
@@ -174,6 +191,7 @@ def _run(rank, world_size, config):
                 loss /= world_size
 
                 mprint("step: %d, training_loss: %.5e" % (step, loss.item()))
+                mlog({"training_loss": loss.item()}, step=step)
             
             if step % config.training.snapshot_freq_for_preemption == 0 and rank == 0:
                 utils.save_checkpoint(checkpoint_meta_dir, state)
@@ -190,6 +208,7 @@ def _run(rank, world_size, config):
                 eval_loss /= world_size
 
                 mprint("step: %d, evaluation_loss: %.5e" % (step, eval_loss.item()))
+                mlog({"evaluation_loss": eval_loss.item()}, step=step)
 
             if step > 0 and step % config.training.snapshot_freq == 0 or step == num_train_steps:
                 # Save the checkpoint.
@@ -243,6 +262,7 @@ def _run(rank, world_size, config):
                             dist.all_reduce(total_perplexity)
                             total_perplexity /= world_size
                             mprint(f"Generative Perplexity at step: {step}. Perplexity: {total_perplexity:.3f}.")
+                            mlog({"generative_perplexity": total_perplexity.item()}, step=step)
 
                             del eval_model, logits, loss
 
