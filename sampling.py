@@ -33,18 +33,17 @@ def get_predictor(name):
     return _PREDICTORS[name]
 
 
-def classifier_free_guidance(score, cfg_w: Union[float, torch.Tensor]):
+def classifier_free_guidance(score, cfg_w: torch.Tensor):
     """Guidance for classifier-free sampling."""
     
-    if isinstance(cfg_w, float):
-        if (cfg_w == 0) or (cfg_w == 1): # no guidance needed. The fact that we do not need to double the batch is handled elsewhere
-            return score
+    assert isinstance(cfg_w, torch.Tensor), f'cfg_w must be a tensor, got {type(cfg_w)}'
+    if torch.all(cfg_w == 0) or torch.all(cfg_w == 1): # no guidance needed. The fact that we do not need to double the batch is handled elsewhere
+        return score
 
     n = score.shape[0] // 2
-    if isinstance(cfg_w, torch.Tensor):
-        assert cfg_w.dim() == 1, f'cfg_w must be a 1D tensor, got {cfg_w.dim()}'
-        assert cfg_w.shape[0] == n, f'cfg_w must have length {n}, got {cfg_w.shape[0]}'
-        cfg_w = cfg_w.unsqueeze(-1).unsqueeze(-1)
+    assert cfg_w.dim() == 1, f'cfg_w must be a 1D tensor, got {cfg_w.dim()}'
+    assert cfg_w.shape[0] == n, f'cfg_w must have length {n}, got {cfg_w.shape[0]}'
+    cfg_w = cfg_w.unsqueeze(-1).unsqueeze(-1)
 
     cond_score = score[:n]
     uncond_score = score[n:]
@@ -185,14 +184,18 @@ def get_pc_sampler(graph,
         if cfg_w == 0: # unconditional sampling
             input_label = num_labels * torch.ones(batch_size, device=device, dtype=torch.long)
             use_cfg = False
+            cfg_w = torch.zeros(batch_size, device=device)
         elif cfg_w == 1: # conditional sampling
             use_cfg = False # Now need for interpolation at cfg_w = 1
+            cfg_w = torch.ones(batch_size, device=device)
         else: # We are interpolating or extrapolating
             use_cfg = True
             if cfg_w == 'testing':
+                assert batch_size > 2, f'batch_size must be at least 2 for testing cfg, got {batch_size}' #TODO this should not be the case,m fix for batch_size = 2
                 cfg_w = torch.cat([torch.tensor([0], device=device), torch.tensor([1], device=device), torch.linspace(0.5, 10, batch_size - 2, device=device)])
             else:
                 assert isinstance(cfg_w, float), f'cfg must be an float or "testing", got {cfg_w}'
+                cfg_w = cfg_w * torch.ones(batch_size, device=device)
 
 
         sampling_score_fn = mutils.get_score_fn(model, train=False, sampling=True, use_cfg=use_cfg, num_labels=num_labels)
