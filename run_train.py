@@ -44,7 +44,7 @@ def setup(rank, world_size, port):
 
 def cleanup():
     dist.destroy_process_group()
-
+    wandb.finish()
 
 def run_multiprocess(rank, world_size, config, port):
     try:
@@ -68,7 +68,7 @@ def _run(rank, world_size, config):
         utils.makedirs(os.path.dirname(checkpoint_meta_dir))
 
 
-    # logging
+    # logging TODO make sure restarting works fro wandb
     if rank == 0:
         logger = utils.get_logger(os.path.join(work_dir, "logs"))
         run = wandb.init(
@@ -76,11 +76,12 @@ def _run(rank, world_size, config):
             project=config.wandb.project,
             config=OmegaConf.to_container(config)
         )
+        global_table = wandb.Table(columns=["step", "id", "label", "cfg_w", "sequence"]) # workaround. TODO: See if the issue gets fixed https://github.com/wandb/wandb/issues/2981
 
     def mprint(msg):
         if rank == 0:
             logger.info(msg)
-    def mlog(dict, step):
+    def mlog(dict, step=None):
         if rank == 0:
             run.log(dict, step=step)
     
@@ -167,7 +168,7 @@ def _run(rank, world_size, config):
     eval_step_fn = losses.get_step_fn(noise, graph, False, optimize_fn, config.training.accum)
 
 
-    if config.training.snapshot_sampling: # TODO: support for different length sampling
+    if config.training.snapshot_sampling:
         sampling_shape = (config.training.batch_size // (config.ngpus * config.training.accum * 2), config.sampling.length)
         sampling_fn = sampling.get_sampling_fn(config, graph, noise, sampling_shape, sampling_eps, device)
 
@@ -231,21 +232,46 @@ def _run(rank, world_size, config):
 
                     sequences = tokenizer.batch_decode(sample)
                     
-                    file_name = os.path.join(this_sample_dir, f"sample_{rank}.txt")
-                    with open(file_name, 'w') as file:
-                        for i, seq in enumerate(sequences):
-                            if sampling_label[i] == 0:
-                                sequence_label = "prokaryotic"
-                            elif sampling_label[i] == 1:
-                                sequence_label = "eukaryotic"
-                            else:
-                                raise ValueError(f"Invalid label: {sampling_label[i]}")
-                            if isinstance(sampling_cfg_w, torch.Tensor):
-                                w = sampling_cfg_w[i].item()
-                            else:
-                                w = sampling_cfg_w
-                            file.write(f">{i} | label: {sequence_label} | cfg_w: {w}\n")
-                            file.write(seq + "\n")
+                    if rank == 0:
+                        sequences_list = [[None for i in sequences] for _ in range(world_size)]
+                        label_list = [torch.zeros_like(sampling_label) for _ in range(world_size)]
+                        cfg_w_list = [torch.zeros_like(sampling_cfg_w) for _ in range(world_size)]
+                    else:
+                        sequences_list = None
+                        label_list = None
+                        cfg_w_list = None
+                    
+                    # gather the samples on rank 0
+                    dist.gather_object(sequences, sequences_list, dst=0)
+                    dist.gather(sampling_label, label_list, dst=0)
+                    dist.gather(sampling_cfg_w, cfg_w_list, dst=0)
+                    
+
+                    if rank == 0:
+                        sequences = list(chain(*sequences_list))
+                        sampling_label = torch.cat(label_list)
+                        sampling_cfg_w = torch.cat(cfg_w_list)
+                        current_table = wandb.Table(columns=global_table.columns, data=global_table.data) # workaround
+
+                        file_name = os.path.join(this_sample_dir, f"samples.txt")
+                        with open(file_name, 'w') as file:
+                            for i, seq in enumerate(sequences):
+                                if sampling_label[i] == 0:
+                                    sequence_label = "prokaryotic"
+                                elif sampling_label[i] == 1:
+                                    sequence_label = "eukaryotic"
+                                else:
+                                    raise ValueError(f"Invalid label: {sampling_label[i]}")
+                                if isinstance(sampling_cfg_w, torch.Tensor):
+                                    w = sampling_cfg_w[i].item()
+                                else:
+                                    w = sampling_cfg_w
+                                file.write(f">{i} | label: {sequence_label} | cfg_w: {w}\n")
+                                file.write(seq + "\n")
+                            
+                                current_table.add_data(step, i, sequence_label, w, seq) # workaround
+                        run.log({"samples": current_table}, step=step)
+                        global_table = current_table # workaround
 
                     if config.eval.perplexity:
                         with torch.no_grad():
