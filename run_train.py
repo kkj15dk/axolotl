@@ -169,7 +169,8 @@ def _run(rank, world_size, config):
 
 
     if config.training.snapshot_sampling:
-        sampling_shape = (config.training.batch_size // (config.ngpus * config.training.accum * 2), config.sampling.length)
+        batch_size = max(config.training.batch_size // (config.ngpus * config.training.accum * 2), 1) # at least sample 1 sequences
+        sampling_shape = (batch_size, config.sampling.length)
         sampling_fn = sampling.get_sampling_fn(config, graph, noise, sampling_shape, sampling_eps, device)
 
     num_train_steps = config.training.n_iters

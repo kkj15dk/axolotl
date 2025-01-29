@@ -191,8 +191,14 @@ def get_pc_sampler(graph,
         else: # We are interpolating or extrapolating
             use_cfg = True
             if cfg_w == 'testing':
-                assert batch_size > 2, f'batch_size must be at least 2 for testing cfg, got {batch_size}' #TODO this should not be the case,m fix for batch_size = 2
-                cfg_w = torch.cat([torch.tensor([0], device=device), torch.tensor([1], device=device), torch.linspace(0.5, 10, batch_size - 2, device=device)])
+                if batch_size == 1:
+                    cfg_w = torch.tensor([1], device=device)
+                elif batch_size == 2:
+                    cfg_w = torch.tensor([0, 1], device=device)
+                else:
+                    cfg_w = torch.cat([torch.tensor([0, 1], device=device),
+                                       torch.linspace(0.5, 10, batch_size - 2, device=device)
+                    ])
             else:
                 assert isinstance(cfg_w, float), f'cfg must be an float or "testing", got {cfg_w}'
                 cfg_w = cfg_w * torch.ones(batch_size, device=device)
