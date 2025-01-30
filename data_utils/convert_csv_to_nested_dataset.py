@@ -9,18 +9,18 @@ from transformers import PreTrainedTokenizerFast
 # %%
 # Define the parameters
 sequence_key = 'sequence'
-id_key = 'clusterid' # This is the column to group by
-label_key = 'domainid' # This is the column to use as the label
-output_path = '/home/kkj/axolotl/datasets/'
+id_key = 'cluster50id' # This is the column to group by
+label_key = 'kingdom' # This is the column to use as the label
+output_path = '/work3/s204514/datasets/'
+cache_dir = '/work3/s204514'
 # input_path = '/home/kkj/ProtDiffusion/datasets/UniRef50_sorted.csv' # Has to be sorted by id
 # input_path = '/home/kkj/ProtDiffusion/datasets/UniRefALL_sorted.csv'
-input_path = '/home/kkj/axolotl/datasets/90_IPR036736_sorted.csv'
-filename_encoded = 'IPR036736_90'
-filename_grouped = 'IPR036736_90'
-filename_nested = 'IPR036736_90'
+input_path = '/work3/s204514/UniRefALL_sorted.csv'
+filename_encoded = 'UniRef50'
+filename_grouped = 'UniRef50'
 assert label_key != 'label', "label_key cannot be 'label', as it is used as a temporary column name, and deleted afterwards"
 
-tokenizer = PreTrainedTokenizerFast.from_pretrained('/home/kkj/axolotl/tokenizer/tokenizer_uniform')
+tokenizer = PreTrainedTokenizerFast.from_pretrained('/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_uniform')
 
 # %%
 # Define the transformation function for batches
@@ -95,7 +95,14 @@ def stream_groupby_gen(dataset: Dataset,
 if not os.path.exists(f'{output_path}{filename_encoded}'):
     # Load the dataset
     print(f"Loading {input_path}")
-    dataset = load_dataset('csv', data_files=input_path)['train']
+    dataset = (
+        load_dataset('csv', data_files=input_path, cache_dir=cache_dir)['train']
+        .rename_column(' kingdomid', 'kingdom')
+        .rename_column(' sequence', 'sequence')
+        .rename_column(' cluster90id', 'cluster90id')
+        .rename_column(' cluster100id', 'cluster100id')
+    )
+
     print(f"Loaded {input_path}")
     print(f"Dataset length: {len(dataset)}")
     print(f"Encoding {filename_encoded}")
@@ -118,10 +125,12 @@ if not os.path.exists(f'{output_path}{filename_grouped}_grouped'):
     print("Loaded dataset, starting grouping")
     dataset = Dataset.from_generator(stream_groupby_gen, 
                                      gen_kwargs={'dataset': dataset, 'id_key': id_key},
+                                     cache_dir=cache_dir,
     ) # .with_format('numpy')
     print("Grouping done, splitting into train/test/val, and then saving to disk")
     # Split the dataset into train and temp sets using the datasets library
-    train_test_split_ratio = 0.02
+    # train_test_split_ratio = 0.02
+    train_test_split_ratio = 0.0002
     train_val_test_split = dataset.train_test_split(test_size=train_test_split_ratio, seed=42)
     train_dataset = train_val_test_split['train']
     temp_dataset = train_val_test_split['test']

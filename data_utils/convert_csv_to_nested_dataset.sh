@@ -1,14 +1,12 @@
 #!/bin/sh 
 ### General options 
 ### -- specify queue -- 
-#BSUB -q gpua100
+#BSUB -q hpc
 ###BSUB -R "select[gpu32gb]"
 ### -- set the job Name -- 
-#BSUB -J train_DiT
+#BSUB -J convert_csv
 ### -- ask for number of cores (default: 4) -- 
-#BSUB -n 4
-### -- Select the resources: 1 gpu in exclusive process mode --
-#BSUB -gpu "num=1:mode=exclusive_process"
+#BSUB -n 16
 ### -- specify that the cores must be on the same host -- 
 #BSUB -R "span[hosts=1]"
 ### -- specify amount of memory per core/slot -- 
@@ -28,4 +26,4 @@ module load python3/3.13.0
 source .venv/bin/activate
 
 # here follow the commands you want to execute
-python3 axolotl/train.py training.batch_size=64 eval.batch_size=64 hydra.run.dir=exp_local/IPR036736_90_grouped/2025.01.29/143108
+python3 axolotl/data_utils/convert_csv_to_nested_dataset.py
