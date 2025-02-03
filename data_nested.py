@@ -166,7 +166,7 @@ def get_dataloaders(config, distributed=True):
         train_set,
         batch_size=config.training.batch_size // (config.ngpus * config.training.accum),
         sampler=train_sampler,
-        num_workers=4,
+        num_workers=4, # TODO: set up to 8 maybe. 8 GPUs * 2 dataloaders * 8 processes = 128 processes
         collate_fn=collate_fn,
         pin_memory=True,
         shuffle=(train_sampler is None),

@@ -147,10 +147,21 @@ class Uniform(Graph):
 
     def sample_transition(self, i, sigma):
         move_chance = 1 - (-sigma).exp()
-        if i.is_nested:
-            raise NotImplementedError("Nested tensors not supported yet")
-        move_indices = torch.rand(*i.shape, device=i.device) < move_chance
-        i_pert = torch.where(move_indices, torch.randint_like(i, self.dim), i)
+
+        if i.is_nested: # TODO: check if this works as intended
+            move_indices_list = [
+                torch.rand(len, device=i.device) < mc.item() for len, mc in zip(i.offsets().diff(), move_chance.unbind())
+            ]
+            move_indices = torch.nested.nested_tensor(
+                move_indices_list, layout=torch.jagged
+            )
+
+            i_pert = torch.nested.nested_tensor([
+                torch.where(mi, torch.randint_like(t, self.dim), t) for mi, t in zip(move_indices.unbind(), i.unbind())
+            ], layout=torch.jagged)
+        else:
+            move_indices = torch.rand(*i.shape, device=i.device) < move_chance
+            i_pert = torch.where(move_indices, torch.randint_like(i, self.dim), i)
         return i_pert
 
     def staggered_score(self, score, dsigma):
@@ -167,6 +178,15 @@ class Uniform(Graph):
             torch.expm1(sigma),
             torch.exp(sigma) - 1
         )
+        if score.is_nested:
+            score, offsets = packed_tensor_from_jagged(score)
+            x, off1 = packed_tensor_from_jagged(x)
+            x0, off2 = packed_tensor_from_jagged(x0)
+            esigm1 = expand_using_offsets(esigm1, offsets).squeeze(-1)
+        else:
+            esigm1 = esigm1.expand_as(x)
+            offsets = None
+
         ratio = 1 - self.dim / (esigm1 + self.dim)
 
         # negative term
@@ -188,10 +208,15 @@ class Uniform(Graph):
         #positive term
         sexp = score.exp()
         pos_term = sexp.mean(dim=-1) - torch.gather(sexp, -1, x[..., None]).squeeze(-1) / self.dim
-        return pos_term - neg_term + const
+        entropy = pos_term - neg_term + const
+        
+        if offsets is not None:
+            entropy = jagged_from_packed_tensor(entropy, offsets)
+        
+        return entropy
 
 
-class Absorbing(Graph): #  we exponentiate (which maintains positivity) to be beneficial to avoid numerical errors and also found that scaling by e^σ − 1 helps for absorbing diffusion
+class Absorbing(Graph):
     def __init__(self, dim):
         super().__init__()
         self._dim = dim
@@ -235,16 +260,9 @@ class Absorbing(Graph): #  we exponentiate (which maintains positivity) to be be
             move_indices_list = [
                 torch.rand(len, device=i.device) < mc.item() for len, mc in zip(i.offsets().diff(), move_chance.unbind())
             ]
-            # print("move_indices_list", move_indices_list)
             move_indices = torch.nested.nested_tensor(
                 move_indices_list, layout=torch.jagged
             )
-            # print("move_indices", move_indices)
-            # for t in i.unbind():
-            #     print("i", t.shape)
-            # for t in move_indices.unbind():
-            #     print("move_indices", t.shape)
-
             # TODO: for some reason masked_fill does not work, even though i and move_indices are the same shape
             # i_pert = i.masked_fill(move_indices, self.dim - 1)
             # Usng where instead
