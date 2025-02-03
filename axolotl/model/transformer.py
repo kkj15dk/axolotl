@@ -20,7 +20,7 @@ from .fused_add_dropout_scale import (
 
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
-from utils_nested import packed_tensor_from_jagged, jagged_from_packed_tensor, coerce_offsets, expand_using_offsets, padded_from_jagged, jagged_from_padded
+from ..utils_nested import packed_tensor_from_jagged, jagged_from_packed_tensor, coerce_offsets, expand_using_offsets, padded_from_jagged, jagged_from_padded
 
 def modulate(x, shift, scale):
 
@@ -261,10 +261,10 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         self.config = config
 
         self.absorb = config.graph.type == "absorb"
-        vocab_size = config.tokens + (1 if self.absorb else 0)
+        self.vocab_size = config.tokens + (1 if self.absorb else 0)
         self.num_labels = config.num_labels
 
-        self.vocab_embed = EmbeddingLayer(config.model.hidden_size, vocab_size)
+        self.vocab_embed = EmbeddingLayer(config.model.hidden_size, self.vocab_size)
         self.label_embed = LabelEmbedder(self.num_labels, config.model.cond_dim, config.model.label_dropout)
         self.sigma_map = TimestepEmbedder(config.model.cond_dim)
         self.rotary_emb = rotary.Rotary(config.model.hidden_size // config.model.n_heads)
@@ -273,7 +273,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
             DDiTBlock(config.model.hidden_size, config.model.n_heads, config.model.cond_dim, dropout=config.model.dropout) for _ in range(config.model.n_blocks)
         ])
 
-        self.output_layer = DDitFinalLayer(config.model.hidden_size, vocab_size, config.model.cond_dim)
+        self.output_layer = DDitFinalLayer(config.model.hidden_size, self.vocab_size, config.model.cond_dim)
         self.scale_by_sigma = config.model.scale_by_sigma
 
 
