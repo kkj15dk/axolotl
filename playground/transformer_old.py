@@ -10,8 +10,8 @@ from einops import rearrange
 from huggingface_hub import PyTorchModelHubMixin
 from omegaconf import OmegaConf
 
-from . import rotary
-from .fused_add_dropout_scale import (
+from ..axolotl.model import rotary
+from ..axolotl.model.fused_add_dropout_scale import (
     bias_dropout_add_scale_fused_train, 
     bias_dropout_add_scale_fused_inference, 
     get_bias_dropout_add_scale, 

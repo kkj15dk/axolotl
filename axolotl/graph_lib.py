@@ -4,9 +4,9 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils_nested import packed_tensor_from_jagged, jagged_from_packed_tensor, coerce_offsets, expand_using_offsets
+from .utils_nested import packed_tensor_from_jagged, jagged_from_packed_tensor, coerce_offsets, expand_using_offsets
 
-from catsample import sample_categorical
+from .catsample import sample_categorical
 
 def get_graph(config, device):
     if config.graph.type == "uniform":

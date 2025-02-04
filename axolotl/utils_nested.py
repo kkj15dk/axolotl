@@ -6,9 +6,18 @@ def packed_tensor_from_jagged(tensor):
 
 def jagged_from_packed_tensor(tensor, offsets):
     '''
-    Make a jagged tensor from valeus and offsets. Preserves gradient.
+    Make a jagged tensor from values and offsets. Preserves gradient.
     '''
-    return torch.nested.nested_tensor_from_jagged(tensor, offsets)
+    lens: torch.Tensor = offsets.diff()
+    min_len, max_len = lens.aminmax()
+
+    return torch.nested.nested_tensor_from_jagged(
+        values=tensor, 
+        offsets=offsets, 
+        jagged_dim=1,
+        min_seqlen=min_len,
+        max_seqlen=max_len,
+    )
 
 def coerce_offsets(src, tgt):
     assert torch.eq(src.offsets(), tgt.offsets()).all().item()

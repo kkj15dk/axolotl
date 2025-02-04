@@ -8,20 +8,23 @@ import random
 import numpy as np
 import torch
 import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.nn.functional as F
+from torch.nn.parallel import DistributedDataParallel as DDP
 
-import data_nested as data
-import losses
-import sampling
-import graph_lib
-import noise_lib
-import utils
-from model import SEDD
-from model.ema import ExponentialMovingAverage
+from . import (
+    data_nested as data, 
+    losses, 
+    sampling,
+    graph_lib,
+    noise_lib,
+    utils
+)
+from .model.transformer import SEDD
+from .model.ema import ExponentialMovingAverage
+
 from transformers import GPT2TokenizerFast, GPT2LMHeadModel, PreTrainedTokenizerFast
-import wandb
 from omegaconf import OmegaConf
+import wandb
 
 torch.backends.cudnn.benchmark = True
 # torch.autograd.set_detect_anomaly(True)
@@ -71,21 +74,22 @@ def _run(rank, world_size, config):
     # logging TODO make sure restarting works fro wandb
     if rank == 0:
         logger = utils.get_logger(os.path.join(work_dir, "logs"))
-        run = wandb.init(
-            entity=config.wandb.entity,
-            project=config.wandb.project,
-            config=OmegaConf.to_container(config)
-        )
-        global_table = wandb.Table(columns=["step", "id", "label", "cfg_w", "sequence"]) # workaround. TODO: See if the issue gets fixed https://github.com/wandb/wandb/issues/2981
+        if config.wandb.use_wandb:
+            run = wandb.init(
+                entity=config.wandb.entity,
+                project=config.wandb.project,
+                config=OmegaConf.to_container(config)
+            )
+            mprint(f"wandb initiated with run id: {run.id} and run name: {run.name}")
+            global_table = wandb.Table(columns=["step", "id", "label", "cfg_w", "sequence"]) # workaround. TODO: See if the issue gets fixed https://github.com/wandb/wandb/issues/2981
 
     def mprint(msg):
         if rank == 0:
             logger.info(msg)
     def mlog(dict, step=None):
-        if rank == 0:
+        if rank == 0 and config.wandb.use_wandb:
             run.log(dict, step=step)
     
-    mprint(f"wandb initiated with run id: {run.id} and run name: {run.name}")
     mprint(work_dir)
     mprint(config)
     device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")

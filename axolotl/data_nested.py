@@ -13,12 +13,12 @@ from datasets import load_from_disk, Dataset
 from torch.utils.data import DataLoader, DistributedSampler, Sampler
 from typing import Optional
 
-def cycle_loader(dataloader, sampler=None):
+def cycle_loader(dataloader):
     while True:
-        if sampler is not None:
-            sampler.set_epoch(np.random.randint(0, 100000))
         for data in dataloader:
             yield data
+        # go to next epoch
+        dataloader.batch_sampler.set_epoch(dataloader.batch_sampler.epoch + 1)
 
 
 def wt_detokenizer(string):
@@ -130,22 +130,6 @@ def maybe_truncate(input_ids, max_len, generator=None):
     return input_ids
 
 
-def collate_fn(batch):
-    generator = None # TODO: add generator for deterministic evaluation
-    max_len = 4096 # TODO: move this to config while still making it possible to pickle this function
-
-    cluster_sizes = [len(x["input_ids"]) for x in batch]
-    indexes = [torch.randint(low=0, high=s, size=(1,), generator=generator) for s in cluster_sizes]
-    indexes = torch.cat(indexes)
-
-    input_ids_list = [x["input_ids"][i] for x, i in zip(batch, indexes)]
-    input_ids_list = [maybe_truncate(input_ids, max_len, generator=generator) for input_ids in input_ids_list]
-
-    input_ids = torch.nested.nested_tensor(input_ids_list, layout=torch.jagged)
-    label = torch.tensor([x["label"][i] for x, i in zip(batch, indexes)])
-
-    return {"input_ids": input_ids, "label": label}
-
 def get_dataloaders(config, distributed=True):
     if config.training.batch_size % (config.ngpus * config.training.accum) != 0:
             raise ValueError(f"Train Batch Size {config.training.batch_size} is not divisible by {config.ngpus} gpus with accumulation {config.training.accum}.")
@@ -156,29 +140,168 @@ def get_dataloaders(config, distributed=True):
     valid_set = get_dataset(config.data.valid_path)
 
     if distributed:
-        train_sampler = DistributedSampler(train_set) 
-        test_sampler = DistributedSampler(valid_set)
+        train_sampler = DistributedSequencePackingSampler(train_set,
+                                                          max_length=config.model.length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                          total_length=config.model.length * config.training.batch_size // (config.ngpus * config.training.accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                          drop_last=config.training.drop_last,
+        )
+        val_sampler = DistributedSequencePackingSampler(valid_set, 
+                                                        max_length=config.model.length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                        total_length=config.model.length * config.training.batch_size // (config.ngpus * config.training.accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                        drop_last=config.training.drop_last,
+        )
     else:
         train_sampler = None
-        test_sampler = None
+        val_sampler = None
 
     train_loader = cycle_loader(DataLoader(
         train_set,
-        batch_size=config.training.batch_size // (config.ngpus * config.training.accum),
-        sampler=train_sampler,
+        # batch_size=config.training.batch_size // (config.ngpus * config.training.accum),
+        batch_sampler=train_sampler,
         num_workers=4, # TODO: set up to 8 maybe. 8 GPUs * 2 dataloaders * 8 processes = 128 processes
-        collate_fn=collate_fn,
+        collate_fn=train_sampler.collate_fn,
         pin_memory=True,
         shuffle=(train_sampler is None),
         persistent_workers=True,
     ))
     valid_loader = cycle_loader(DataLoader(
         valid_set,
-        batch_size=config.eval.batch_size // (config.ngpus * config.training.accum),
-        sampler=test_sampler,
+        # batch_size=config.eval.batch_size // (config.ngpus * config.training.accum),
+        batch_sampler=val_sampler,
         num_workers=4,
-        collate_fn=collate_fn,
+        collate_fn=val_sampler.collate_fn,
         pin_memory=True,
-        shuffle=(test_sampler is None),
+        shuffle=(val_sampler is None),
     ))
     return train_loader, valid_loader
+
+
+class SequencePackingSampler(Sampler):
+    def __init__(self, 
+                 dataset,
+                 indices=None,
+                 max_length=4096, 
+                 total_length=4096*32,
+                 seed=0,
+                 drop_last=False,
+    ):
+        self.dataset = dataset # a clustered dataset
+        self.max_length = max_length
+        self.total_length = total_length
+        self.seed = seed
+        self.epoch = 0
+        self.drop_last = drop_last
+
+        if indices is None: #Indices should only be used with ditributed sampler
+            self.indices = list(range(len(dataset)))
+            self.shuffle = True # only shuffle when we are not using distributed sampler. The distributed sampler should handle the shuffling
+        else:
+            self.indices = indices
+            self.shuffle = False # only shuffle when we are not using distributed sampler. The distributed sampler should handle the shuffling
+
+    def __iter__(self):
+        if self.shuffle:
+            g = torch.Generator()
+            g.manual_seed(self.seed + self.epoch)
+            indices = torch.randperm(len(self.indices), generator=g).tolist()
+        else:
+            indices = self.indices
+
+        batch = []
+        batch_length = 0
+        for idx in indices:
+            cluster_size = self.dataset[idx]['cluster_size'].item()
+            cluster_idx = self.epoch % cluster_size
+            length = self.dataset[idx]['length'][cluster_idx].item()
+            length = min(length, self.max_length)
+            
+            batch.append(idx)
+            batch_length += length
+
+            if batch_length >= self.total_length:
+                yield batch
+                batch = []
+                batch_length = 0
+
+        if len(batch) > 0 and not self.drop_last:
+            yield batch
+
+
+    def collate_fn(self, batch):
+        generator = None # TODO: add generator for deterministic evaluation
+
+        # get the size of the clusters, and use the epoch to index into the cluster
+        cluster_sizes = [x['cluster_size'] for x in batch]
+        indexes = [self.epoch % cs for cs in cluster_sizes]
+
+        # get the input_ids for each cluster
+        input_ids_list = [x["input_ids"][i] for x, i in zip(batch, indexes)]
+        input_ids_list = [maybe_truncate(input_ids, self.max_length, generator=generator) for input_ids in input_ids_list[:-1]]
+
+        # the last input ids should be truncated to the remaining length, to not exceed the total length
+        length_sum = sum([min(x["length"][i], self.max_length) for x, i in zip(batch, indexes[:-1])]).item()
+        last_length = min(self.total_length - length_sum, self.max_length)
+        print("total length: ", length_sum + last_length)
+
+        input_ids_list.append(maybe_truncate(input_ids_list[-1], last_length, generator=generator))
+
+        # convert to nested tensor for the model
+        input_ids = torch.nested.nested_tensor(input_ids_list, layout=torch.jagged)
+        label = torch.tensor([x["label"][i] for x, i in zip(batch, indexes)])
+
+        return {"input_ids": input_ids, "label": label}
+
+    def __len__(self):
+        raise NotImplementedError("SequencePackingSampler does not support __len__")
+    
+    def set_epoch(self, epoch: int) -> None:
+        r"""
+        Set the epoch for this sampler.
+
+        When :attr:`shuffle=True`, this ensures all replicas
+        use a different random ordering for each epoch. Otherwise, the next iteration of this
+        sampler will yield the same ordering.
+
+        Args:
+            epoch (int): Epoch number.
+        """
+        self.epoch = epoch
+
+
+class DistributedSequencePackingSampler(DistributedSampler):
+    def __init__(self, 
+                 dataset, 
+                 num_replicas=None, 
+                 rank=None, 
+                 shuffle=True, 
+                 seed=0, 
+                 max_length=4096, # max length of each sequence in the batch
+                 total_length=4096*32, # max length of the batch (amount of tokens in the batch)
+                 drop_last=False,
+    ):
+        super().__init__(dataset, num_replicas=num_replicas, rank=rank, shuffle=shuffle, seed=seed, drop_last=False)
+
+        self.max_length = max_length
+        self.total_length = total_length
+        self.seed = seed
+        self.dataset = dataset
+        self.drop_last = drop_last
+
+    def __iter__(self):
+        self.indices = list(super().__iter__())
+        batch_sampler = SequencePackingSampler(self.dataset, 
+                                               indices=self.indices, 
+                                               max_length=self.max_length, 
+                                               total_length=self.total_length, 
+                                               seed=self.seed,
+                                               drop_last=self.drop_last,
+        )
+        batch_sampler.set_epoch(self.epoch) # set the epoch to the epoch of the distributed sampler
+        self.collate_fn = batch_sampler.collate_fn # set the collate_fn to the collate_fn of the SequencePackingSampler
+        return iter(batch_sampler)
+
+    def collate_fn(self, batch):
+        raise NotImplementedError("DistributedSequencePackingSampler does not support collate_fn. It should be updated in __iter__ by the SequencePackingSampler")
+
+    def __len__(self):
+        raise NotImplementedError("DistributedSequencePackingSampler does not support __len__")

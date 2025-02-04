@@ -122,8 +122,8 @@ class LabelEmbedder(nn.Module):
         labels = torch.where(drop_ids, self.num_classes, labels)
         return labels
 
-    def forward(self, labels, train, force_drop_ids=None):
-        use_dropout = train and (self.dropout_prob > 0) # If we have a dropout prob and we are in training mode, then use dropout
+    def forward(self, labels, force_drop_ids=None):
+        use_dropout = self.training and (self.dropout_prob > 0) # If we have a dropout prob and we are in training mode, then use dropout
         if use_dropout or (force_drop_ids is not None): # If we are using dropout or we are forcing dropout
             labels = self.token_drop(labels, force_drop_ids)
         embeddings = self.embedding_table(labels)
@@ -142,8 +142,8 @@ class DDiTBlock(nn.Module):
         self.n_heads = n_heads
 
         self.norm1 = nn.LayerNorm([dim])
-        self.attn_qkv = nn.Linear(dim, 3 * dim, bias=False)
-        self.attn_out = nn.Linear(dim, dim, bias=False)
+        self.qkv_proj = nn.Linear(dim, 3 * dim, bias=False)
+        self.out_proj = nn.Linear(dim, dim, bias=False)
         self.dropout = nn.Dropout(dropout)
 
         self.norm2 = nn.LayerNorm([dim])
@@ -168,7 +168,7 @@ class DDiTBlock(nn.Module):
         x = modulate(self.norm1(x), shift_msa, scale_msa)
         # dtype0 = x.dtype
 
-        qkv = self.attn_qkv(x)
+        qkv = self.qkv_proj(x)
         qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
 
         with torch.amp.autocast('cuda', enabled=False):
@@ -190,7 +190,7 @@ class DDiTBlock(nn.Module):
         x = rearrange(x, 'b h s d -> b s (h d)')
 
         # out
-        x = self.attn_out(x)
+        x = self.out_proj(x)
         x = modulate(x, None, gate_msa)
         x = self.dropout(x)
         if x_skip.is_nested:
@@ -233,9 +233,9 @@ class DDitFinalLayer(nn.Module):
     def __init__(self, hidden_size, out_channels, cond_dim):
         super().__init__()
         self.norm_final = nn.LayerNorm([hidden_size])
-        self.linear = nn.Linear(hidden_size, out_channels)
-        self.linear.weight.data.zero_()
-        self.linear.bias.data.zero_()
+        self.fc = nn.Linear(hidden_size, out_channels)
+        self.fc.weight.data.zero_()
+        self.fc.bias.data.zero_()
 
         self.adaLN_modulation = nn.Linear(cond_dim, 2 * hidden_size, bias=True)
         self.adaLN_modulation.weight.data.zero_()
@@ -246,7 +246,7 @@ class DDitFinalLayer(nn.Module):
         shift, scale = self.adaLN_modulation(c).unsqueeze(1).chunk(2, dim=-1)
         x = self.norm_final(x)
         x = modulate(x, shift, scale)
-        x = self.linear(x)
+        x = self.fc(x)
         return x
 
 
@@ -289,7 +289,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
 
         x = self.vocab_embed(indices)
         sigma_embed = F.silu(self.sigma_map(sigma))
-        label_embed = F.silu(self.label_embed(label, self.training)) #TODO: is this an appropriate way to add label embeddings?
+        label_embed = F.silu(self.label_embed(label)) #TODO: is this an appropriate way to add label embeddings?
         c = sigma_embed + label_embed
 
         rotary_cos_sin = self.rotary_emb(x)

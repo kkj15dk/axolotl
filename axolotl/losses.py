@@ -2,10 +2,9 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
-import graph_lib
-from model import utils as mutils
 
-import timeit
+from . import graph_lib
+from .model import utils as mutils
 
 
 def get_loss_fn(noise, graph: graph_lib.Graph, train, sampling_eps=1e-3, lv=False):

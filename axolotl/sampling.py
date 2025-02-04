@@ -1,9 +1,9 @@
 import abc
 import torch
 import torch.nn.functional as F
-from catsample import sample_categorical
+from .catsample import sample_categorical
 
-from model import utils as mutils
+from .model import utils as mutils
 from typing import Optional, Union
 
 _PREDICTORS = {}
@@ -196,8 +196,8 @@ def get_pc_sampler(graph,
                 elif batch_size == 2:
                     cfg_w = torch.tensor([0, 1], device=device)
                 else:
-                    cfg_w = torch.cat([torch.tensor([0, 1], device=device),
-                                       torch.linspace(0.5, 10, batch_size - 2, device=device)
+                    cfg_w = torch.cat([torch.tensor([1], device=device),
+                                       torch.linspace(0, 10, batch_size - 1, device=device)
                     ])
             else:
                 assert isinstance(cfg_w, float), f'cfg must be an float or "testing", got {cfg_w}'

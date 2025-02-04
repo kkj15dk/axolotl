@@ -3,8 +3,8 @@
 import hydra
 import os
 import numpy as np
-import run_train
-import utils
+import axolotl.run_train as run_train
+import axolotl.utils as utils
 import torch.multiprocessing as mp
 from hydra.core.hydra_config import HydraConfig
 from hydra.types import RunMode

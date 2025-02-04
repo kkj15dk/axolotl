@@ -9,9 +9,9 @@ __pycache__
 *.png
 # *.txt
 **/outputs/
-**/wandb/
-**/exp/
-**/exp_local/
+wandb/
+exp/
+exp_local/
 data/
 eval/
 assets/
