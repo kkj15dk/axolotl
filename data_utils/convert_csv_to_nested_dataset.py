@@ -11,16 +11,16 @@ from transformers import PreTrainedTokenizerFast
 sequence_key = 'sequence'
 id_key = 'cluster50id' # This is the column to group by
 label_key = 'kingdom' # This is the column to use as the label
-output_path = '/work3/s204514/datasets/'
-cache_dir = '/work3/s204514'
+output_path = '/home/kaspe/axolotl/datasets/'
+cache_dir = None # '/work3/s204514'
 # input_path = '/home/kkj/ProtDiffusion/datasets/UniRef50_sorted.csv' # Has to be sorted by id
 # input_path = '/home/kkj/ProtDiffusion/datasets/UniRefALL_sorted.csv'
-input_path = '/work3/s204514/UniRefALL_sorted.csv'
+input_path = '/home/kaspe/axolotl/datasets/UniRefALL_sorted.csv'
 filename_encoded = 'UniRef50'
 filename_grouped = 'UniRef50'
 assert label_key != 'label', "label_key cannot be 'label', as it is used as a temporary column name, and deleted afterwards"
 
-tokenizer = PreTrainedTokenizerFast.from_pretrained('/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_uniform')
+tokenizer = PreTrainedTokenizerFast.from_pretrained('/home/kaspe/axolotl/tokenizer/tokenizer_uniform')
 
 # %%
 # Define the transformation function for batches
@@ -112,7 +112,7 @@ if not os.path.exists(f'{output_path}{filename_encoded}'):
                 },
                 remove_columns=[label_key, sequence_key],
                 batched=False, 
-                num_proc=16,
+                num_proc=12,
     ).save_to_disk(f'{output_path}{filename_encoded}')
 else:
     print(f"{filename_encoded} already encoded")
