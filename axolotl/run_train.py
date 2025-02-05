@@ -267,10 +267,8 @@ def _run(rank, world_size, config):
                                     sequence_label = "eukaryotic"
                                 else:
                                     raise ValueError(f"Invalid label: {sampling_label[i]}")
-                                if isinstance(sampling_cfg_w, torch.Tensor):
-                                    w = sampling_cfg_w[i].item()
-                                else:
-                                    w = sampling_cfg_w
+                                w = sampling_cfg_w[i].item()
+                                
                                 file.write(f">{i} | label: {sequence_label} | cfg_w: {w}\n")
                                 file.write(seq + "\n")
                             

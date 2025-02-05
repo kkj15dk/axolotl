@@ -260,9 +260,9 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
 
         self.config = config
 
-        self.absorb = config.graph.type == "absorb"
-        self.vocab_size = config.tokens + (1 if self.absorb else 0)
-        self.num_labels = config.num_labels
+        self.absorb: bool = config.graph.type == "absorb"
+        self.vocab_size: int = config.tokens + (1 if self.absorb else 0)
+        self.num_labels: int = config.num_labels
 
         self.vocab_embed = EmbeddingLayer(config.model.hidden_size, self.vocab_size)
         self.label_embed = LabelEmbedder(self.num_labels, config.model.cond_dim, config.model.label_dropout)

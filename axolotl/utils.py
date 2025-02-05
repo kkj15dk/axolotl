@@ -3,6 +3,15 @@ import torch
 import os
 import logging
 from omegaconf import OmegaConf, open_dict
+import argparse
+
+def float_or_testing(value):
+    if value == 'testing':
+        return value
+    try:
+        return float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid cfg_w: {value}. Must be a float or 'testing'.")
 
 
 def load_hydra_config_from_run(load_dir):

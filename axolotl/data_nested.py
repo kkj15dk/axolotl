@@ -11,7 +11,7 @@ import json
 from datasets import load_from_disk, Dataset
 
 from torch.utils.data import DataLoader, DistributedSampler, Sampler
-from typing import Optional
+from typing import Optional, List
 
 def cycle_loader(dataloader):
     while True:
@@ -179,12 +179,13 @@ def get_dataloaders(config, distributed=True):
 class SequencePackingSampler(Sampler):
     def __init__(self, 
                  dataset,
-                 indices=None,
-                 max_length=4096, 
-                 total_length=4096*32,
+                 indices: List[int]=None,
+                 max_length: int=None, 
+                 total_length: int=None,
                  seed=0,
                  drop_last=False,
     ):
+        
         self.dataset = dataset # a clustered dataset
         self.max_length = max_length
         self.total_length = total_length
@@ -228,7 +229,8 @@ class SequencePackingSampler(Sampler):
 
 
     def collate_fn(self, batch):
-        generator = None # TODO: add generator for deterministic evaluation
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
 
         # get the size of the clusters, and use the epoch to index into the cluster
         cluster_sizes = [x['cluster_size'] for x in batch]
@@ -236,14 +238,14 @@ class SequencePackingSampler(Sampler):
 
         # get the input_ids for each cluster
         input_ids_list = [x["input_ids"][i] for x, i in zip(batch, indexes)]
-        input_ids_list = [maybe_truncate(input_ids, self.max_length, generator=generator) for input_ids in input_ids_list[:-1]]
+        input_ids_list = [maybe_truncate(input_ids, self.max_length, generator=g) for input_ids in input_ids_list[:-1]]
 
         # the last input ids should be truncated to the remaining length, to not exceed the total length
         length_sum = sum([min(x["length"][i], self.max_length) for x, i in zip(batch, indexes[:-1])]).item()
         last_length = min(self.total_length - length_sum, self.max_length)
         print("total length: ", length_sum + last_length)
 
-        input_ids_list.append(maybe_truncate(input_ids_list[-1], last_length, generator=generator))
+        input_ids_list.append(maybe_truncate(input_ids_list[-1], last_length, generator=g))
 
         # convert to nested tensor for the model
         input_ids = torch.nested.nested_tensor(input_ids_list, layout=torch.jagged)
@@ -274,9 +276,9 @@ class DistributedSequencePackingSampler(DistributedSampler):
                  num_replicas=None, 
                  rank=None, 
                  shuffle=True, 
-                 seed=0, 
-                 max_length=4096, # max length of each sequence in the batch
-                 total_length=4096*32, # max length of the batch (amount of tokens in the batch)
+                 max_length: int=None, # max lenght of each sequence in the batch
+                 total_length: int=None, # total length of the batch (total amoint of tokens)
+                 seed=0,
                  drop_last=False,
     ):
         super().__init__(dataset, num_replicas=num_replicas, rank=rank, shuffle=shuffle, seed=seed, drop_last=False)
@@ -286,6 +288,7 @@ class DistributedSequencePackingSampler(DistributedSampler):
         self.seed = seed
         self.dataset = dataset
         self.drop_last = drop_last
+        self.epoch = 0
 
     def __iter__(self):
         self.indices = list(super().__iter__())
@@ -305,3 +308,16 @@ class DistributedSequencePackingSampler(DistributedSampler):
 
     def __len__(self):
         raise NotImplementedError("DistributedSequencePackingSampler does not support __len__")
+
+    def set_epoch(self, epoch: int) -> None:
+        r"""
+        Set the epoch for this sampler.
+
+        When :attr:`shuffle=True`, this ensures all replicas
+        use a different random ordering for each epoch. Otherwise, the next iteration of this
+        sampler will yield the same ordering.
+
+        Args:
+            epoch (int): Epoch number.
+        """
+        self.epoch = epoch
