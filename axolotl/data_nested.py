@@ -193,17 +193,16 @@ class SequencePackingSampler(Sampler):
         self.epoch = 0
         self.drop_last = drop_last
 
-        if indices is None: #Indices should only be used with ditributed sampler
+        if indices is None: # Indices should only be used with ditributed sampler
             self.indices = list(range(len(dataset)))
             self.shuffle = True # only shuffle when we are not using distributed sampler. The distributed sampler should handle the shuffling
         else:
             self.indices = indices
-            self.shuffle = False # only shuffle when we are not using distributed sampler. The distributed sampler should handle the shuffling
+            self.shuffle = False # we only need to shuffle when we are not using distributed sampler. The distributed sampler should handle the shuffling
 
     def __iter__(self):
         if self.shuffle:
-            g = torch.Generator()
-            g.manual_seed(self.seed + self.epoch)
+            g = torch.Generator().manual_seed(self.seed + self.epoch)
             indices = torch.randperm(len(self.indices), generator=g).tolist()
         else:
             indices = self.indices
@@ -212,7 +211,12 @@ class SequencePackingSampler(Sampler):
         batch_length = 0
         for idx in indices:
             cluster_size = self.dataset[idx]['cluster_size'].item()
-            cluster_idx = self.epoch % cluster_size
+            if cluster_size == 1:
+                cluster_idx = 0
+            else:
+                # To deterministically sample from the clusters, we use the epoch to index into the cluster, same as in the collate_fn (very important)
+                cluster_idx = torch.randint(0, cluster_size, (1,), generator=torch.Generator().manual_seed(self.seed + self.epoch)).item()
+
             length = self.dataset[idx]['length'][cluster_idx].item()
             length = min(length, self.max_length)
             
@@ -229,12 +233,18 @@ class SequencePackingSampler(Sampler):
 
 
     def collate_fn(self, batch):
-        g = torch.Generator()
-        g.manual_seed(self.seed + self.epoch)
+        g = torch.Generator().manual_seed(self.seed + self.epoch)
 
-        # get the size of the clusters, and use the epoch to index into the cluster
+        # get the sizes of the clusters
         cluster_sizes = [x['cluster_size'] for x in batch]
-        indexes = [self.epoch % cs for cs in cluster_sizes]
+        
+        indexes = []
+        for cs in cluster_sizes:
+            if cs == 1:
+                indexes.append(0)
+                continue
+            idx = torch.randint(0, cs, (1,), generator=torch.Generator().manual_seed(self.seed + self.epoch)).item()
+            indexes.append(idx)
 
         # get the input_ids for each cluster
         input_ids_list = [x["input_ids"][i] for x, i in zip(batch, indexes)]
@@ -276,8 +286,8 @@ class DistributedSequencePackingSampler(DistributedSampler):
                  num_replicas=None, 
                  rank=None, 
                  shuffle=True, 
-                 max_length: int=None, # max lenght of each sequence in the batch
-                 total_length: int=None, # total length of the batch (total amoint of tokens)
+                 max_length: int=None, # max length of each sequence in the batch
+                 total_length: int=None, # total length of the batch (total amount of tokens)
                  seed=0,
                  drop_last=False,
     ):

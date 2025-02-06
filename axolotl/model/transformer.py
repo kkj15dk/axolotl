@@ -142,8 +142,10 @@ class DDiTBlock(nn.Module):
         self.n_heads = n_heads
 
         self.norm1 = nn.LayerNorm([dim])
-        self.qkv_proj = nn.Linear(dim, 3 * dim, bias=False)
-        self.out_proj = nn.Linear(dim, dim, bias=False)
+        self.attn_qkv = nn.Linear(dim, 3 * dim, bias=False)
+        self.attn_out = nn.Linear(dim, dim, bias=False)
+        # self.qkv_proj = nn.Linear(dim, 3 * dim, bias=False) # TODO rename to qkv_proj and out_proj
+        # self.out_proj = nn.Linear(dim, dim, bias=False)
         self.dropout = nn.Dropout(dropout)
 
         self.norm2 = nn.LayerNorm([dim])
@@ -168,7 +170,7 @@ class DDiTBlock(nn.Module):
         x = modulate(self.norm1(x), shift_msa, scale_msa)
         # dtype0 = x.dtype
 
-        qkv = self.qkv_proj(x)
+        qkv = self.attn_qkv(x)
         qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
 
         with torch.amp.autocast('cuda', enabled=False):
@@ -190,7 +192,7 @@ class DDiTBlock(nn.Module):
         x = rearrange(x, 'b h s d -> b s (h d)')
 
         # out
-        x = self.out_proj(x)
+        x = self.attn_out(x)
         x = modulate(x, None, gate_msa)
         x = self.dropout(x)
         if x_skip.is_nested:
@@ -233,9 +235,12 @@ class DDitFinalLayer(nn.Module):
     def __init__(self, hidden_size, out_channels, cond_dim):
         super().__init__()
         self.norm_final = nn.LayerNorm([hidden_size])
-        self.fc = nn.Linear(hidden_size, out_channels)
-        self.fc.weight.data.zero_()
-        self.fc.bias.data.zero_()
+        self.linear = nn.Linear(hidden_size, out_channels)
+        self.linear.weight.data.zero_()
+        self.linear.bias.data.zero_()
+        # self.fc = nn.Linear(hidden_size, out_channels) # TODO rename to linear?
+        # self.fc.weight.data.zero_()
+        # self.fc.bias.data.zero_()
 
         self.adaLN_modulation = nn.Linear(cond_dim, 2 * hidden_size, bias=True)
         self.adaLN_modulation.weight.data.zero_()
@@ -246,7 +251,7 @@ class DDitFinalLayer(nn.Module):
         shift, scale = self.adaLN_modulation(c).unsqueeze(1).chunk(2, dim=-1)
         x = self.norm_final(x)
         x = modulate(x, shift, scale)
-        x = self.fc(x)
+        x = self.linear(x)
         return x
 
 

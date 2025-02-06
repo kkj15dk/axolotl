@@ -71,7 +71,7 @@ def _run(rank, world_size, config):
         utils.makedirs(os.path.dirname(checkpoint_meta_dir))
 
 
-    # logging TODO make sure restarting works fro wandb
+    # logging TODO make sure restarting works for wandb
     if rank == 0:
         logger = utils.get_logger(os.path.join(work_dir, "logs"))
         if config.wandb.use_wandb:

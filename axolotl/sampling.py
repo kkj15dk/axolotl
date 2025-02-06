@@ -5,6 +5,7 @@ from .catsample import sample_categorical
 
 from .model import utils as mutils
 from typing import Optional, Union
+from tqdm import tqdm
 
 _PREDICTORS = {}
 
@@ -130,7 +131,7 @@ class Denoiser:
         
         #return probs.argmax(dim=-1)
         return sample_categorical(probs)
-                       
+
 
 def get_sampling_fn(config, graph, noise, batch_dims, eps, device):
     
@@ -162,6 +163,7 @@ def get_pc_sampler(graph,
                    cfg: Union[float, str]=1, 
                    label: str=None, 
                    num_labels: int=2,
+                   use_tqdm: bool=False
 ):
     predictor = get_predictor(predictor)(graph, noise)
     projector = proj_fun
@@ -209,11 +211,11 @@ def get_pc_sampler(graph,
         timesteps = torch.linspace(1, eps, steps + 1, device=device)
         dt = (1 - eps) / steps
 
-        for i in range(steps):
+        for i in tqdm(range(steps), desc='Sampling', disable=not use_tqdm):
             t = timesteps[i] * torch.ones(x.shape[0], 1, device=device)
             x = projector(x)
             x = predictor.update_fn(sampling_score_fn, x, t, dt, input_label, cfg_w)
-            
+
 
         if denoise:
             # denoising step

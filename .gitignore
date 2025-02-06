@@ -7,7 +7,7 @@ __pycache__
 .DS_Store
 **.pyc
 *.png
-# *.txt
+*.csv
 **/outputs/
 wandb/
 exp/
@@ -23,3 +23,5 @@ core
 .venv/
 datasets/
 secret.txt
+pretrained/
+samples.txt

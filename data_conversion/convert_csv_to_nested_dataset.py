@@ -10,7 +10,7 @@ from transformers import PreTrainedTokenizerFast
 # Define the parameters
 sequence_key = 'sequence'
 id_key = 'clusterid' # 'cluster50id' # This is the column to group by
-label_key = 'domainid' # 'kingdom' # This is the column to use as the label
+label_key = 'domainid' # This is the column to use as the label
 output_path = '/home/kkj/axolotl/datasets/'
 cache_dir = None
 input_path = '/home/kkj/axolotl/datasets/90_IPR036736_sorted.csv'
@@ -106,7 +106,7 @@ if not os.path.exists(f'{output_path}{filename_encoded}'):
     print(f"Loading {input_path}")
     dataset = (
         load_dataset('csv', data_files=input_path, cache_dir=cache_dir)['train']
-        # .rename_column(' kingdomid', 'kingdom')
+        # .rename_column(' domainid', 'domain')
         # .rename_column(' sequence', 'sequence')
         # .rename_column(' cluster90id', 'cluster90id')
         # .rename_column(' cluster100id', 'cluster100id')

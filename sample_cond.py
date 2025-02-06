@@ -1,12 +1,12 @@
 import torch
 import argparse
+from typing import Optional, List, Union
 
 from transformers import PreTrainedTokenizerFast
-import torch.nn.functional as F
 
-from .load_model import load_model
-from . import sampling
-from .utils import float_or_testing
+from axolotl import sampling
+from axolotl.load_model import load_model
+from axolotl.utils import float_or_testing
 
 
 def main():
@@ -19,13 +19,41 @@ def main():
     parser.add_argument("--denoise", type=bool, default=True)
     parser.add_argument("--cfg_w", type=float_or_testing, default=1.0)
     parser.add_argument("--label", type=str, default=None, choices=['prokaryotic', 'eukaryotic', 'random'])
-    parser.add_argument("--output", type=str, default="samples.txt")
+    parser.add_argument("--prefix", type=Optional[str], default="[")
+    parser.add_argument("--suffix", type=Optional[str], default="]")
+    parser.add_argument("--input", type=Optional[str], default=None)
+    parser.add_argument("--input_locations", type=Optional[List[int]], default=None)
+    parser.add_argument("--output", type=str, default="samples_cond.txt")
     args = parser.parse_args()
 
+    tokenizer = PreTrainedTokenizerFast.from_pretrained('/home/kkj/axolotl/tokenizer/tokenizer_absorb')
+
+    # more generally commands can be defined with something like below:
+    # input = "AFGKLM"
+    # input_locs = [5, 6, 19, 20, 1000, 10001]
+    if args.input is not None: # If input is provided, use it instead of prefix and suffix
+        assert args.input_locations is not None, "If input is provided, input_locations must be provided as well"
+        print("Using input and input_locations instead of prefix and suffix")
+        input_ids = tokenizer(args.input)['input_ids'].squeeze(0)
+        input_locs = args.input_locations
+    else: # If input is not provided, use prefix and suffix for conditional sampling
+        prefix_ids = tokenizer(args.prefix)['input_ids'].squeeze(0)
+        suffix_ids = tokenizer(args.suffix)['input_ids'].squeeze(0)
+        input_ids = prefix_ids + suffix_ids
+        input_locs = list(range(len(prefix_ids))) + list(range(args.length-len(suffix_ids), args.length))
+    
+    assert len(input_ids) <= args.length, "The sum of the prefix and suffix is longer than the maximum length"
+
+
+    input_ids = torch.tensor(input_ids, device="cuda")[None].repeat(args.batch_size, 1)
+
+    def proj_fun(x):
+        x[:, input_locs] = input_ids
+        return x
     
     device = torch.device('cuda')
     model, graph, noise = load_model(args.model_path, device)
-    tokenizer = PreTrainedTokenizerFast.from_pretrained('/home/kkj/axolotl/tokenizer/tokenizer_absorb')
+    
 
     sampling_fn = sampling.get_pc_sampler(
         graph=graph,
@@ -34,6 +62,7 @@ def main():
         predictor=args.predictor,
         steps=args.steps, 
         denoise=args.denoise,
+        proj_fun=proj_fun,
         cfg=args.cfg_w,
         label=args.label,
         num_labels=model.num_labels,
@@ -41,6 +70,7 @@ def main():
     )
 
     samples, sampling_label, sampling_cfg_w = sampling_fn(model)
+    samples = proj_fun(samples)
     sequences = tokenizer.batch_decode(samples)
 
     with open(args.output, "a") as file:
@@ -55,7 +85,6 @@ def main():
             
             file.write(f">{i} | label: {sequence_label} | cfg_w: {w}\n")
             file.write(seq + "\n")
-
 
 if __name__=="__main__":
     main()
