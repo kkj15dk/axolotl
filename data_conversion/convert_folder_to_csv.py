@@ -1,12 +1,10 @@
 import Bio
 from Bio import SeqIO
 import os
-
-INPUT = '/home/kkj/ProtDiffusion/datasets/90_IPR036736/'
-OUTPUT = '/home/kkj/ProtDiffusion/datasets/'
-OUTFILE = '90_IPR036736.csv' 
+import argparse
 
 def convert_folder_to_csv(folder_path, output_path, filename):
+
     '''
     Input:
     A folder with fasta files.
@@ -23,4 +21,14 @@ def convert_folder_to_csv(folder_path, output_path, filename):
 
 # %%
 if __name__ == "__main__":
-    convert_folder_to_csv(INPUT, OUTPUT, OUTFILE)
+    
+    INPUT = '/datasets/test/'
+    OUTPUT = '/datasets/'
+    OUTFILE = 'test.csv'
+
+    parser = argparse.ArgumentParser(description="Convert a folder of fasta files to a csv file")
+    parser.add_argument("--input", default=INPUT, type=str)
+    parser.add_argument("--output", default=OUTPUT, type=str)
+    parser.add_argument("--outfile", default=OUTFILE, type=str)
+
+    convert_folder_to_csv(parser.input, parser.output, parser.outfile)

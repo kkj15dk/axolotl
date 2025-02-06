@@ -21,27 +21,30 @@ cd-hit -i **infile** -o **outfile** -c **0.9** -n 5 -d 0 -M 0 -T 0 -g 1
 infile, outfile, 0.9 threshold, wordsize of 5, entire defline of fasta, no memory cap, no CPU thread cap, accurate clusters
 The threshold for clustering can be changed if that is desired. 0.9 => UniRef90 clustering.
 
-This will create **outfile**.clstr, containing an overview of which entries are in which clusters.
+This will create **outfile**, a fasta file containing the representatives of each cluster. This file can be deleted, we want all the entries, not just representatives.
+And **outfile**.clstr, containing an overview of which entries are in which clusters.
 
 ### converting clusters into a csv
 
 This is then converted into a bunch of fasta files, where each fasta file contains the entries of a single cluster, using the perl script make_multi_seq.pl:
-make_multi_seq **ACP_by_IPR036736.faa** **90_ACP_by_IPR036736.clstr** multi-seq **1**
+infile is the same input as in cd-hit, outfile.clstr is teh output of cd-hit.
+make_multi_seq **infile** **outfile**.clstr **out_folder** **1**
 
 **1** signifies, that every cluster must have at least 1 entry, or else it is discarded. This can be set to a higher value, if desired.
 
-Lastly, the folder of cluster fasta files is converted to a csv file using the script convert_folder_to_csv.py
+Lastly, the **out_folder** of cluster fasta files is converted to a csv file using the script convert_folder_to_csv.py
+See the script for information as to how it works.
 
 ## 2. Sort the csv
 
-For the sorting, the ordering of the csv headers is very important. The first header has to be the id for which to cluster.
+For sorting the csv, the ordering of the csv headers is very important. The first header has to be the id for which to cluster.
 
 Sort the file using UNIX sort:
-(head -n 1 <inputfile.csv> && tail -n +2 <inputfile.csv> | sort -u) > <inputfile-sorted.csv>
+(head -n 1 <infile.csv> && tail -n +2 <infile.csv> | sort -u) > <outfile-sorted.csv>
 
-This sorts the file, ignoring the header, and deletes duplicates.
+This sorts the file, ignoring the header, and deletes duplicates. I name the output with the suffix *_sorted* to signify that this csv has been sorted.
 
 ## 3. Encode into a dataset
 
-The dataset is then encoded using the script convert_csv_to_nested_dataset.py. This script both creates an encoded dataset, and then afterwards creates a grouped dataset, grouped by the clusterid. They are saved to disk as huggingface Datasets.
+The dataset is then encoded using the script convert_csv_to_nested_dataset.py. This script both creates an encoded dataset, and then afterwards creates a grouped dataset, grouped by the clusterid. They are saved to disk as huggingface Datasets. See the script for information on how it works
 The grouped dataset is the final one used for model training.
