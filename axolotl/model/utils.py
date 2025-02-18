@@ -48,10 +48,12 @@ def get_score_fn(model, train=False, sampling=False, use_cfg=False, num_labels=N
                 assert num_labels is not None, "Must provide num_labels if using cfg"
                 x = torch.cat([x,x], dim=0)
                 sigma = torch.cat([sigma, sigma], dim=0)
-                uncond = torch.ones_like(label, dtype=torch.long) * num_labels
+                uncond = torch.ones_like(label, dtype=torch.long) * num_labels # assume that the uncond label is the last label
                 label = torch.cat([label, uncond], dim=0)
 
+
             sigma = sigma.reshape(-1)
+
             score = model_fn(x, sigma, label)
             
             if sampling:

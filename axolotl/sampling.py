@@ -6,6 +6,7 @@ from .catsample import sample_categorical
 from .model import utils as mutils
 from typing import Optional, Union
 from tqdm import tqdm
+from typing import List
 
 _PREDICTORS = {}
 
@@ -29,17 +30,36 @@ def register_predictor(cls=None, *, name=None):
     else:
         return _register(cls)
 
-    
+
 def get_predictor(name):
     return _PREDICTORS[name]
+
+
+def write_samples(output: str, sequences: List[str], sampling_label: List[str], sampling_cfg_w: torch.FloatTensor, steps: int, name: str = "sample"):
+    """Write samples to a file."""
+    
+    assert sampling_cfg_w.dim() == 1, f"cfg_w must be a 1D tensor, got {sampling_cfg_w.dim()}"
+    assert len(sequences) == len(sampling_label) == len(sampling_cfg_w), f"Length mismatch: {len(sequences)}, {len(sampling_label)}, {len(sampling_cfg_w)}"
+
+    print(f"Writing samples to {output}")
+    with open(output, "a") as file:
+        for i, seq in enumerate(sequences):
+            if sampling_label[i] == 0:
+                sequence_label = "prokaryotic"
+            elif sampling_label[i] == 1:
+                sequence_label = "eukaryotic"
+            else:
+                raise ValueError(f"Invalid label: {sampling_label[i]}")
+            w = sampling_cfg_w[i].item()
+            
+            file.write(f">{name}_{i} label:{sequence_label} cfg_w:{w} steps:{steps}\n")
+            file.write(seq + "\n")
 
 
 def classifier_free_guidance(score, cfg_w: torch.Tensor):
     """Guidance for classifier-free sampling."""
     
     assert isinstance(cfg_w, torch.Tensor), f'cfg_w must be a tensor, got {type(cfg_w)}'
-    if torch.all(cfg_w == 0) or torch.all(cfg_w == 1): # no guidance needed. The fact that we do not need to double the batch is handled elsewhere
-        return score
 
     n = score.shape[0] // 2
     assert cfg_w.dim() == 1, f'cfg_w must be a 1D tensor, got {cfg_w.dim()}'
@@ -63,7 +83,7 @@ class Predictor(abc.ABC):
         self.noise = noise
 
     @abc.abstractmethod
-    def update_fn(self, score_fn, x, t, step_size, label, cfg_w):
+    def update_fn(self, score_fn, x, t, step_size, label, cfg_w, use_cfg=False):
         """One update of the predictor.
 
         Args:
@@ -79,11 +99,13 @@ class Predictor(abc.ABC):
 
 @register_predictor(name="euler")
 class EulerPredictor(Predictor):
-    def update_fn(self, score_fn, x, t, step_size, label, cfg_w):
+    def update_fn(self, score_fn, x, t, step_size, label, cfg_w, use_cfg=False):
         sigma, dsigma = self.noise(t)
+
         score = score_fn(x, sigma, label)
 
-        score = classifier_free_guidance(score, cfg_w)
+        if use_cfg:
+            score = classifier_free_guidance(score, cfg_w)
 
         rev_rate = step_size * dsigma[..., None] * self.graph.reverse_rate(x, score)
         x = self.graph.sample_rate(x, rev_rate)
@@ -97,14 +119,15 @@ class NonePredictor(Predictor):
 
 @register_predictor(name="analytic")
 class AnalyticPredictor(Predictor):
-    def update_fn(self, score_fn, x, t, step_size, label, cfg_w):
+    def update_fn(self, score_fn, x, t, step_size, label, cfg_w, use_cfg=False):
         curr_sigma = self.noise(t)[0]
         next_sigma = self.noise(t - step_size)[0]
         dsigma = curr_sigma - next_sigma
 
         score = score_fn(x, curr_sigma, label)
 
-        score = classifier_free_guidance(score, cfg_w)
+        if use_cfg:
+            score = classifier_free_guidance(score, cfg_w)
 
         stag_score = self.graph.staggered_score(score, dsigma)
         probs = stag_score * self.graph.transp_transition(x, dsigma)
@@ -116,12 +139,13 @@ class Denoiser:
         self.graph = graph
         self.noise = noise
 
-    def update_fn(self, score_fn, x, t, label, cfg_w):
+    def update_fn(self, score_fn, x, t, label, cfg_w, use_cfg=False):
         sigma = self.noise(t)[0]
 
         score = score_fn(x, sigma, label)
 
-        score = classifier_free_guidance(score, cfg_w)
+        if use_cfg:
+            score = classifier_free_guidance(score, cfg_w)
 
         stag_score = self.graph.staggered_score(score, sigma)
         probs = stag_score * self.graph.transp_transition(x, sigma)
@@ -176,7 +200,7 @@ def get_pc_sampler(graph,
             input_label = torch.zeros(batch_size, device=device, dtype=torch.long)
         elif label == 'eukaryotic': # eukaryotic = 1
             input_label = torch.ones(batch_size, device=device, dtype=torch.long)
-        elif label == 'random':
+        elif label == 'random' or label is None:
             input_label = torch.randint(0, num_labels, (batch_size,), device=device, dtype=torch.long)
         else:
             raise ValueError(f"Invalid label: {label}")
@@ -214,14 +238,14 @@ def get_pc_sampler(graph,
         for i in tqdm(range(steps), desc='Sampling', disable=not use_tqdm):
             t = timesteps[i] * torch.ones(x.shape[0], 1, device=device)
             x = projector(x)
-            x = predictor.update_fn(sampling_score_fn, x, t, dt, input_label, cfg_w)
+            x = predictor.update_fn(sampling_score_fn, x, t, dt, input_label, cfg_w, use_cfg)
 
 
         if denoise:
             # denoising step
             x = projector(x)
             t = timesteps[-1] * torch.ones(x.shape[0], 1, device=device)
-            x = denoiser.update_fn(sampling_score_fn, x, t, input_label, cfg_w)
+            x = denoiser.update_fn(sampling_score_fn, x, t, input_label, cfg_w, use_cfg)
             
         return x, input_label, cfg_w
     

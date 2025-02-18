@@ -12,7 +12,7 @@ training:
   drop_last: True
   accum: 1
   n_iters: 1300001
-  snapshot_freq: 50000
+  snapshot_freq: 10 # 50000
   log_freq: 50
   eval_freq: 100
   snapshot_freq_for_preemption: 10000
@@ -49,8 +49,8 @@ sampling:
 
 eval:
   batch_size: 2
-  perplexity: False # True
-  perplexity_batch_size: 32
+  perplexity: True
+  perplexity_batch_size: 2
 
 optim:
   weight_decay: 0

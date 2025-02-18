@@ -22,7 +22,8 @@ from . import (
 from .model.transformer import SEDD
 from .model.ema import ExponentialMovingAverage
 
-from transformers import GPT2TokenizerFast, GPT2LMHeadModel, PreTrainedTokenizerFast
+from transformers import PreTrainedTokenizerFast
+import esm
 from omegaconf import OmegaConf
 import wandb
 
@@ -80,7 +81,7 @@ def _run(rank, world_size, config):
                 project=config.wandb.project,
                 config=OmegaConf.to_container(config)
             )
-            mprint(f"wandb initiated with run id: {run.id} and run name: {run.name}")
+            logger.info(f"wandb initiated with run id: {run.id} and run name: {run.name}")
             global_table = wandb.Table(columns=["step", "id", "label", "cfg_w", "sequence"]) # workaround. TODO: See if the issue gets fixed https://github.com/wandb/wandb/issues/2981
 
     def mprint(msg):
@@ -145,7 +146,7 @@ def _run(rank, world_size, config):
     initial_step = int(state['step'])
 
     # load in tokenizer
-    tokenizer = PreTrainedTokenizerFast.from_pretrained(config.data.tokenizer_path)
+    tokenizer: PreTrainedTokenizerFast = PreTrainedTokenizerFast.from_pretrained(config.data.tokenizer_path)
 
     # Build data iterators
     train_ds, eval_ds = data.get_dataloaders(config)
@@ -173,7 +174,7 @@ def _run(rank, world_size, config):
 
 
     if config.training.snapshot_sampling:
-        batch_size = max(config.training.batch_size // (config.ngpus * config.training.accum * 2), 1) # at least sample 1 sequences
+        batch_size = config.eval.batch_size // (config.ngpus * config.training.accum)
         sampling_shape = (batch_size, config.sampling.length)
         sampling_fn = sampling.get_sampling_fn(config, graph, noise, sampling_shape, sampling_eps, device)
 
@@ -252,15 +253,15 @@ def _run(rank, world_size, config):
                     dist.gather(sampling_cfg_w, cfg_w_list, dst=0)
                     
 
-                    if rank == 0:
-                        sequences = list(chain(*sequences_list))
+                    if rank == 0 and config.wandb.use_wandb:
+                        gathered_sequences = list(chain(*sequences_list))
                         sampling_label = torch.cat(label_list)
                         sampling_cfg_w = torch.cat(cfg_w_list)
                         current_table = wandb.Table(columns=global_table.columns, data=global_table.data) # workaround
 
                         file_name = os.path.join(this_sample_dir, f"samples.txt")
                         with open(file_name, 'w') as file:
-                            for i, seq in enumerate(sequences):
+                            for i, seq in enumerate(gathered_sequences):
                                 if sampling_label[i] == 0:
                                     sequence_label = "prokaryotic"
                                 elif sampling_label[i] == 1:
@@ -278,21 +279,41 @@ def _run(rank, world_size, config):
 
                     if config.eval.perplexity:
                         with torch.no_grad():
-                            eval_model = GPT2LMHeadModel.from_pretrained("gpt2-large").to(device).eval()
-                            batches = sample.shape[0] // config.eval.perplexity_batch_size
+                            # get the ESM model
+                            eval_model, alphabet = esm.pretrained.esm2_t12_35M_UR50D()
+                            eval_model = eval_model.to(device).eval()
+
+                            # convert the sequences to ESM tokens
+                            sequences = [seq.replace("[", "<cls>").replace("]", "<eos>").replace("?", "X") for seq in sequences]
+                            esm_sample = torch.cat([torch.tensor(alphabet.encode(seq)).to(device).unsqueeze(0) for seq in sequences], dim=0)
+
+                            # batch the samples
+                            n_batches = esm_sample.shape[0] // config.eval.perplexity_batch_size
                             total_perplexity = 0
-                            for i in range(batches):
-                                s = sample[i * config.eval.perplexity_batch_size:(i + 1) * config.eval.perplexity_batch_size]
-                                loss, logits = eval_model(s, labels=s)[:2]
-                                logits = logits.transpose(-1, -2)
-                                perplexity = F.cross_entropy(logits[..., :-1], s[..., 1:], reduction="none").mean(dim=-1).exp().mean()
+                            for i in range(n_batches):
+
+                                # initialize the logits
+                                batch = esm_sample[i * config.eval.perplexity_batch_size:(i + 1) * config.eval.perplexity_batch_size]
+                                esm_logits = torch.zeros(batch.shape[0], batch.shape[1], len(alphabet)).to(device)
+                                
+                                # MLM, mask each token and get logits. Requires many forward passes
+                                for i in range(batch.shape[1]):
+                                    batch_masked = batch.clone()
+                                    batch_masked[:, i] = alphabet.mask_idx
+                                    batch_masked = batch_masked.to(device)
+                                    esm_logits[:, i, :] = eval_model(batch_masked)["logits"][:, i, :]
+
+                                # calculate perplexity TODO: Check if this is correct
+                                esm_logits = esm_logits.transpose(1, 2)
+                                perplexity = F.cross_entropy(esm_logits, batch, reduction="none").mean(dim=-1).exp().mean()
                                 total_perplexity += perplexity
-                            total_perplexity /= batches
+
+                            total_perplexity /= n_batches
                             dist.all_reduce(total_perplexity)
                             total_perplexity /= world_size
                             mprint(f"Generative Perplexity at step: {step}. Perplexity: {total_perplexity:.3f}.")
                             mlog({"generative_perplexity": total_perplexity.item()}, step=step)
 
-                            del eval_model, logits, loss
+                            del eval_model, esm_logits
 
                     dist.barrier()

@@ -251,9 +251,9 @@ class SequencePackingSampler(Sampler):
         input_ids_list = [maybe_truncate(input_ids, self.max_length, generator=g) for input_ids in input_ids_list[:-1]]
 
         # the last input ids should be truncated to the remaining length, to not exceed the total length
-        length_sum = sum([min(x["length"][i], self.max_length) for x, i in zip(batch, indexes[:-1])]).item()
+        length_sum = sum([min(x["length"][i].item(), self.max_length) for x, i in zip(batch, indexes[:-1])])
         last_length = min(self.total_length - length_sum, self.max_length)
-        print("total length: ", length_sum + last_length)
+        # print("total length: ", length_sum + last_length)
 
         input_ids_list.append(maybe_truncate(input_ids_list[-1], last_length, generator=g))
 

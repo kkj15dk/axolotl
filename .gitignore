@@ -25,3 +25,6 @@ datasets/
 secret.txt
 pretrained/
 samples.txt
+secret.md
+*.txt
+*.cif
