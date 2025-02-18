@@ -2,7 +2,9 @@
 ### General options 
 ### -- specify queue -- 
 #BSUB -q gpua100
-###BSUB -R "select[gpu32gb]"
+#BSUB -R "select[gpu80gb]"
+### -- if your job needs to depend on another job --
+###BSUB -w "done(23988842)"
 ### -- set the job Name -- 
 #BSUB -J train_DiT
 ### -- ask for number of cores (default: 4) -- 
