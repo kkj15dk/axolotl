@@ -107,6 +107,7 @@ class EulerPredictor(Predictor):
         if use_cfg:
             score = classifier_free_guidance(score, cfg_w)
 
+        dsigma = dsigma.unsqueeze(-1) # TODO: make it so this is not necessary
         rev_rate = step_size * dsigma[..., None] * self.graph.reverse_rate(x, score)
         x = self.graph.sample_rate(x, rev_rate)
         return x
@@ -129,6 +130,7 @@ class AnalyticPredictor(Predictor):
         if use_cfg:
             score = classifier_free_guidance(score, cfg_w)
 
+        dsigma = dsigma.unsqueeze(-1) # TODO: make it so this is not necessary
         stag_score = self.graph.staggered_score(score, dsigma)
         probs = stag_score * self.graph.transp_transition(x, dsigma)
         return sample_categorical(probs)
@@ -147,6 +149,7 @@ class Denoiser:
         if use_cfg:
             score = classifier_free_guidance(score, cfg_w)
 
+        sigma = sigma.unsqueeze(-1) # TODO: make it so this is not necessary
         stag_score = self.graph.staggered_score(score, sigma)
         probs = stag_score * self.graph.transp_transition(x, sigma)
         # truncate probabilities
@@ -236,7 +239,7 @@ def get_pc_sampler(graph,
         dt = (1 - eps) / steps
 
         for i in tqdm(range(steps), desc='Sampling', disable=not use_tqdm):
-            t = timesteps[i] * torch.ones(x.shape[0], 1, device=device)
+            t = timesteps[i] * torch.ones(x.shape[0], device=device)
             x = projector(x)
             x = predictor.update_fn(sampling_score_fn, x, t, dt, input_label, cfg_w, use_cfg)
 
@@ -244,7 +247,7 @@ def get_pc_sampler(graph,
         if denoise:
             # denoising step
             x = projector(x)
-            t = timesteps[-1] * torch.ones(x.shape[0], 1, device=device)
+            t = timesteps[-1] * torch.ones(x.shape[0], device=device)
             x = denoiser.update_fn(sampling_score_fn, x, t, input_label, cfg_w, use_cfg)
             
         return x, input_label, cfg_w

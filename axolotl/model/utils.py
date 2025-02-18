@@ -52,7 +52,7 @@ def get_score_fn(model, train=False, sampling=False, use_cfg=False, num_labels=N
                 label = torch.cat([label, uncond], dim=0)
 
 
-            sigma = sigma.reshape(-1)
+            # sigma = sigma.reshape(-1)
 
             score = model_fn(x, sigma, label)
             
