@@ -39,13 +39,38 @@ class Rotary(torch.nn.Module):
             self.sin_cached[:,:,2,:,:].fill_(0.)
         
         if x.is_nested:
-            cos = self.cos_cached.squeeze(0)
-            sin = self.sin_cached.squeeze(0)
-            nested_cos_list = [cos[:n] for n in x.offsets().diff()]
-            nested_sin_list = [sin[:n] for n in x.offsets().diff()]
-            nested_sin = torch.nested.as_nested_tensor(nested_sin_list, device=x.device, layout=torch.jagged)
-            nested_cos = torch.nested.as_nested_tensor(nested_cos_list, device=x.device, layout=torch.jagged)
-            return nested_cos, nested_sin
+
+            # Get the lengths of the nested tensor, also implicitly get the batch size
+            lengths = x.offsets().diff()
+
+            # Expand the cached tensors to match the batch size
+            cos_nested = self.cos_cached.expand(len(lengths), -1, -1, -1, -1).contiguous()
+            sin_nested = self.sin_cached.expand(len(lengths), -1, -1, -1, -1).contiguous()
+
+            # Take the nested view of the dense tensors
+            cos_nested = torch.nested.narrow(
+                cos_nested, 
+                dim=1,
+                start=0,
+                length=lengths,
+                layout=torch.jagged
+            ).contiguous()
+            sin_nested = torch.nested.narrow(
+                sin_nested, 
+                dim=1,
+                start=0,
+                length=lengths,
+                layout=torch.jagged
+            ).contiguous()
+
+            # old implementation
+            # cos = self.cos_cached.squeeze(0)
+            # sin = self.sin_cached.squeeze(0)
+            # nested_cos_list = [cos[:n] for n in x.offsets().diff()]
+            # nested_sin_list = [sin[:n] for n in x.offsets().diff()]
+            # sin_nested = torch.nested.as_nested_tensor(nested_sin_list, device=x.device, layout=torch.jagged)
+            # cos_nested = torch.nested.as_nested_tensor(nested_cos_list, device=x.device, layout=torch.jagged)
+            return cos_nested, sin_nested
 
         return self.cos_cached, self.sin_cached
 
