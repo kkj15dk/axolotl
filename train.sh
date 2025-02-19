@@ -30,4 +30,4 @@ module load python3/3.13.0
 source .venv/bin/activate
 
 # here follow the commands you want to execute
-python3 axolotl/train.py training.batch_size=64 eval.batch_size=64 hydra.run.dir=exp_local/IPR036736_90_grouped/2025.01.29/143108
+python3 axolotl/train.py
