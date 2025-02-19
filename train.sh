@@ -2,7 +2,7 @@
 ### General options 
 ### -- specify queue -- 
 #BSUB -q gpua100
-#BSUB -R "select[gpu80gb]"
+#BSUB -R "select[gpu40gb]"
 ### -- if your job needs to depend on another job --
 ###BSUB -w "done(23988842)"
 ### -- set the job Name -- 
