@@ -125,8 +125,7 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
     elif name == "lambada":
         dataset = get_lambada_test_dataset()
     else:
-        # dataset = load_dataset(name, cache_dir=cache_dir)
-        dataset = load_from_disk(name)
+        dataset = load_dataset(name, cache_dir=cache_dir)
 
     if name == "lambada":
         data = dataset

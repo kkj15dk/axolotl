@@ -12,7 +12,7 @@ from torch import nn
 #     return x.offsets().diff().max()
 
 class Rotary(torch.nn.Module):
-    def __init__(self, dim, base = 10_000):
+    def __init__(self, dim, base=10_000):
         super().__init__()
         inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq)
@@ -30,7 +30,7 @@ class Rotary(torch.nn.Module):
             self.seq_len_cached = seq_len
             t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
             freqs = torch.einsum("i,j->ij", t, self.inv_freq.clone())
-            emb = torch.cat((freqs, freqs), dim=-1).to(device)
+            emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
             # dims are: batch, seq_len, qkv, head, dim
             self.cos_cached = emb.cos()[None, :, None, None, :].repeat(1,1,3,1,1)
             self.sin_cached = emb.sin()[None, :, None, None, :].repeat(1,1,3,1,1)
@@ -73,26 +73,6 @@ class Rotary(torch.nn.Module):
             return cos_nested, sin_nested
 
         return self.cos_cached, self.sin_cached
-
-    def forward(self, x, offsets=None):
-        if offsets is not None:
-            seq_lens = offsets.diff().tolist()
-            cos_sin_list = [self.get_cos_sin(x.device, seq_len) for seq_len in seq_lens]
-        else:
-            cos_sin_list = self.get_cos_sin(x.device, x.shape[1])
-        # if seq_len != self.seq_len_cached:
-        #     self.seq_len_cached = seq_len
-        #     t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
-        #     freqs = torch.einsum("i,j->ij", t, self.inv_freq.clone())
-        #     emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
-        #     # dims are: batch, seq_len, qkv, head, dim
-        #     self.cos_cached = emb.cos()[None, :, None, None, :].repeat(1,1,3,1,1)
-        #     self.sin_cached = emb.sin()[None, :, None, None, :].repeat(1,1,3,1,1)
-        #     # This makes the transformation on v an identity.
-        #     self.cos_cached[:,:,2,:,:].fill_(1.)
-        #     self.sin_cached[:,:,2,:,:].fill_(0.)
-
-        return cos_sin_list
 
 
 def rotate_half(x):

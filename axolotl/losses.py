@@ -8,7 +8,6 @@ from .model import utils as mutils
 
 
 def get_loss_fn(noise, graph: graph_lib.Graph, train, sampling_eps=1e-3, lv=False):
-def get_loss_fn(noise, graph: graph_lib.Graph, train, sampling_eps=1e-3, lv=False):
 
     def loss_fn(model, input_ids, label, t=None, perturbed_batch=None):
         """
@@ -22,12 +21,7 @@ def get_loss_fn(noise, graph: graph_lib.Graph, train, sampling_eps=1e-3, lv=Fals
                 t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
             
         sigma, dsigma = noise(t)
-
-        # print("sigma", sigma)
-        # print("dsigma", dsigma)
-        # print(sigma.shape)
-        # print(dsigma.shape)
-
+        
         if perturbed_batch is None:
             perturbed_batch = graph.sample_transition(input_ids, sigma[:, None])
 
@@ -90,7 +84,6 @@ def get_step_fn(noise, graph, train, optimize_fn, accum):
 
     accum_iter = 0
     total_loss = 0
-    assert accum == 1, "Accumulation is not supported yet"
 
     def step_fn(state, input_ids, label):
         nonlocal accum_iter 
@@ -114,11 +107,6 @@ def get_step_fn(noise, graph, train, optimize_fn, accum):
         #     module.register_backward_hook(backward_hook)
 
         if train:
-            # Ensure model parameters require gradients
-            for name, param in model.named_parameters():
-                if not param.requires_grad:
-                    print(f"Parameter {name} does not require grad")
-            
             optimizer = state['optimizer']
             scaler = state['scaler']
             loss = loss_fn(model, input_ids, label).mean() / accum

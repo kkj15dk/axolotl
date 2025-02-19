@@ -106,7 +106,7 @@ class Graph(abc.ABC):
 
 
     @abc.abstractmethod
-    def score_entropy(self, score, sigma, x, x0, offsets=None):
+    def score_entropy(self, score, sigma, x, x0):
         """
         Computes the score entropy function (with requisite constant normalization)
         """
@@ -137,7 +137,7 @@ class Uniform(Graph):
         return self.rate(i)
 
     def transition(self, i, sigma):
-        trans: torch.Tensor = torch.ones(*i.shape, self.dim, device=i.device) * (1 - (-sigma[..., None]).exp()) / self.dim
+        trans = torch.ones(*i.shape, self.dim, device=i.device) * (1 - (-sigma[..., None]).exp()) / self.dim
         trans = trans.scatter(-1, i[..., None], torch.zeros_like(trans))
         trans = trans.scatter(-1, i[..., None], 1 - trans.sum(dim=-1, keepdim=True))
         return trans
@@ -172,8 +172,8 @@ class Uniform(Graph):
     def sample_limit(self, *batch_dims):
         return torch.randint(0, self.dim, batch_dims)
 
-    def score_entropy(self, score, sigma, x, x0, offsets=None):
-        esigm1 = torch.where( # more precise, compute differently for sigma under 0.5, than for over 0.5. (exp(sigma) - 1)
+    def score_entropy(self, score, sigma, x, x0):
+        esigm1 = torch.where(
             sigma < 0.5,
             torch.expm1(sigma),
             torch.exp(sigma) - 1
@@ -252,7 +252,7 @@ class Absorbing(Graph):
         )[..., None]
         return edge
 
-    def sample_transition(self, i: torch.Tensor, sigma):
+    def sample_transition(self, i, sigma):
         move_chance = 1 - (-sigma).exp()
         # move_indices = torch.rand(*i.shape, device=i.device) < move_chance # TODO: using rand_like, when it becomes available https://github.com/pytorch/pytorch/pull/144889
         
@@ -309,21 +309,18 @@ class Absorbing(Graph):
 
         # negative_term
         neg_term = ratio * torch.gather(score[rel_ind], -1, other_ind[..., None]).squeeze(-1)
-        # print("neg_term", neg_term.shape)
 
-        # positive term
+        #positive term
         pos_term = score[rel_ind][:, :-1].exp().sum(dim=-1)
-        # print("pos_term", pos_term.shape)
 
         # constant term
         const = ratio * (ratio.log() - 1)
-        # print("const", const.shape)
 
         entropy = torch.zeros(*x.shape, device=x.device)
-        # print("entropy", entropy.shape)
         entropy[rel_ind] += pos_term - neg_term + const
 
         if offsets is not None:
             entropy = jagged_from_packed_tensor(entropy, offsets)
 
         return entropy
+    
