@@ -117,7 +117,7 @@ def _run(rank, world_size, config):
     
     # build score model
     score_model = SEDD(config).to(device)
-    score_model = DDP(score_model, device_ids=[rank], static_graph=True, find_unused_parameters=True)
+    score_model = DDP(score_model, device_ids=[rank], static_graph=True) #, find_unused_parameters=True)
 
     num_parameters = sum(p.numel() for p in score_model.parameters())
     mprint(f"Number of parameters in the model: {num_parameters}")
