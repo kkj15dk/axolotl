@@ -32,15 +32,17 @@ data:
   name: UniRef50_grouped
   train_path: /work3/s204514/datasets/UniRef50_grouped/train
   valid_path: /work3/s204514/datasets/UniRef50_grouped/valid
-  tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb'
+  # tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb'
+  tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_uniform'
 
 graph:
-  type: absorb
+  type: uniform
   file: data
   report_all: False
 
 noise:
-  type: loglinear
+  type: geometric
+  eps: 1e-3
   sigma_min: 1e-4
   sigma_max: 20
 
