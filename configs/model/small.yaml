@@ -5,6 +5,6 @@ cond_dim: 128
 length: 4096
 n_blocks: 12
 n_heads: 12
-scale_by_sigma: True
+scale_by_sigma: False
 dropout: 0.1
 label_dropout: 0.1 # for classifier-free guidance (cfg)

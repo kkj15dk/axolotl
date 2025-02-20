@@ -8,7 +8,7 @@ tokens: 23 # 23 for uniform
 num_labels: 2 # prokaryotic (0), eukaryotic (1)
 
 training:
-  batch_size: 64
+  batch_size: 64 # effective 16 batch size with 4 accum
   drop_last: True
   accum: 8
   n_iters: 1300001
