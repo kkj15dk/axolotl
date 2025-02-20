@@ -293,7 +293,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
 
 
         if self.scale_by_sigma:
-            assert self.absorb, "Haven't configured this to work."
+            # assert self.absorb, "Haven't configured this to work." # TODO: is this because of absorb, or geometric noise schedule?
             esigm1_log = torch.where(sigma < 0.5, torch.expm1(sigma), sigma.exp() - 1).log().to(x.dtype)[:, None, None]
             x = x - esigm1_log - np.log(x.shape[-1] - 1) # this will be approximately averaged at 0
         
