@@ -5,14 +5,17 @@ import logging
 from omegaconf import OmegaConf, open_dict
 import argparse
 
-def float_or_testing(value):
+def float_list_or_testing(value):
     if value == 'testing':
         return value
     try:
-        return float(value)
+        # Check if the value is a single float
+        if ',' not in value:
+            return [float(value)]
+        # Otherwise, split the value and convert each part to float
+        return [float(v) for v in value.split(',')]
     except ValueError:
-        raise argparse.ArgumentTypeError(f"Invalid cfg_w: {value}. Must be a float or 'testing'.")
-
+        raise argparse.ArgumentTypeError(f"Invalid cfg_w: {value}. Must be a float, a list of floats, or 'testing'.")
 
 def load_hydra_config_from_run(load_dir):
     config_path = os.path.join(load_dir, ".hydra/config.yaml")

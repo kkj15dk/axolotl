@@ -6,7 +6,9 @@ import torch.nn.functional as F
 
 from axolotl import sampling
 from axolotl.load_model import load_model
-from axolotl.utils import float_or_testing
+from axolotl.utils import float_list_or_testing
+
+from typing import List, Union
 
 
 def get_args():
@@ -17,7 +19,7 @@ def get_args():
     parser.add_argument("--steps", type=int, default=1024)
     parser.add_argument("--predictor", type=str, default="analytic", choices=sampling._PREDICTORS.keys())
     parser.add_argument("--denoise", type=bool, default=True)
-    parser.add_argument("--cfg_w", type=float_or_testing, default=1.0)
+    parser.add_argument("--cfg_w", type=float_list_or_testing, default=1.0)
     parser.add_argument("--label", type=str, default='random', choices=['prokaryotic', 'eukaryotic', 'random'])
     parser.add_argument("--output", type=str, default="samples.txt")
     parser.add_argument("--name", type=str, default="sample")
@@ -31,7 +33,7 @@ def sample(model_path: str,
            steps: int,
            predictor: str,
            denoise: bool,
-           cfg_w: float,
+           cfg_w: Union[float, List[float], str],
            label: str,
            output: str,
            name: str,
