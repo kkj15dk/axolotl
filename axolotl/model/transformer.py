@@ -294,7 +294,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
 
         x = self.vocab_embed(indices)
         sigma_embed = F.silu(self.sigma_map(sigma))
-        label_embed = F.silu(self.label_embed(label)) #TODO: is this an appropriate way to add label embeddings?
+        label_embed = F.silu(self.label_embed(label)) # TODO: is this an appropriate way to add label embeddings?
         c = sigma_embed + label_embed
 
         rotary_cos_sin = self.rotary_emb(x)
@@ -309,7 +309,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         if self.scale_by_sigma:
             assert self.absorb, "Haven't configured this to work."
             esigm1_log = torch.where(sigma < 0.5, torch.expm1(sigma), sigma.exp() - 1).log().to(x.dtype)[:, None, None]
-            x = x - esigm1_log - np.log(x.shape[-1] - 1)# this will be approximately averaged at 0
+            x = x - esigm1_log - np.log(x.shape[-1] - 1) # this will be approximately averaged at 0
         
 
         if x.is_nested:
