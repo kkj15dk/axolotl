@@ -51,4 +51,4 @@ boltz predict temp --use_msa_server --accelerator gpu --num_workers 2 --output_f
 
 ### Acknowledgements
 
-This repository builds heavily off of [SEDD](https://github.com/louaaron/Score-Entropy-Discrete-Diffusion), which in turn is built of off [score sde](https://github.com/yang-song/score_sde_pytorch), [plaid](https://github.com/igul222/plaid), and [DiT](https://github.com/facebookresearch/DiT).
+This repository started as a fork of [SEDD](https://github.com/louaaron/Score-Entropy-Discrete-Diffusion), which in turn is built of off [score sde](https://github.com/yang-song/score_sde_pytorch), [plaid](https://github.com/igul222/plaid), and [DiT](https://github.com/facebookresearch/DiT).

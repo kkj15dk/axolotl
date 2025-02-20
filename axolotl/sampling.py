@@ -187,7 +187,7 @@ def get_pc_sampler(graph,
                    eps=1e-5, 
                    device=torch.device('cpu'), 
                    proj_fun=lambda x: x, 
-                   cfg: Union[float, str]=1, 
+                   cfg: Union[float, List[float], str]=1.0, 
                    label: str=None, 
                    num_labels: int=2,
                    use_tqdm: bool=False
@@ -229,7 +229,10 @@ def get_pc_sampler(graph,
                                        torch.linspace(0, 10, batch_size - 1, device=device)
                     ])
             else:
-                assert isinstance(cfg_w, float), f'cfg must be an float or "testing", got {cfg_w}'
+                if isinstance(cfg_w, list):
+                    assert batch_size == len(cfg_w), f'cfg_w must have length {batch_size}, got {len(cfg_w)}'
+                    cfg_w = torch.tensor(cfg_w, device=device)
+                assert isinstance(cfg_w, float), f'cfg must be an float, a list of floats, or "testing", got {cfg_w}'
                 cfg_w = cfg_w * torch.ones(batch_size, device=device)
 
 

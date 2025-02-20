@@ -6,7 +6,7 @@ from transformers import PreTrainedTokenizerFast
 
 from axolotl import sampling
 from axolotl.load_model import load_model
-from axolotl.utils import float_or_testing
+from axolotl.utils import float_list_or_testing
 
 
 def get_args():
@@ -17,7 +17,7 @@ def get_args():
     parser.add_argument("--steps", type=int, default=1024)
     parser.add_argument("--predictor", type=str, default="analytic", choices=sampling._PREDICTORS.keys())
     parser.add_argument("--denoise", type=bool, default=True)
-    parser.add_argument("--cfg_w", type=float_or_testing, default=1.0)
+    parser.add_argument("--cfg_w", type=float_list_or_testing, default=1.0)
     parser.add_argument("--label", type=str, default=None, choices=['prokaryotic', 'eukaryotic', 'random'])
     parser.add_argument("--prefix", type=str, default=None)
     parser.add_argument("--suffix", type=str, default=None)
@@ -37,7 +37,7 @@ def sample_conditional(model_path: str,
                        steps: int = 1024,
                        predictor: str = "analytic",
                        denoise: bool = True,
-                       cfg_w: Union[float, str] = 1.0,
+                       cfg_w: Union[float, List[float], str] = 1.0,
                        label: str = None,
                        output: str = "samples_cond.fasta",
                        name: str = "cond_sample",
