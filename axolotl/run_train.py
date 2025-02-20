@@ -82,7 +82,7 @@ def _run(rank, world_size, config):
                 config=OmegaConf.to_container(config)
             )
             logger.info(f"wandb initiated with run id: {run.id} and run name: {run.name}")
-            global_table = wandb.Table(columns=["step", "id", "label", "cfg_w", "sequence"]) # workaround. TODO: See if the issue gets fixed https://github.com/wandb/wandb/issues/2981
+            global_table = wandb.Table(columns=["step", "id", "label", "cfg_w", "sampling_steps", "sequence"]) # workaround. TODO: See if the issue gets fixed https://github.com/wandb/wandb/issues/2981
 
     def mprint(msg):
         if rank == 0:
@@ -270,10 +270,10 @@ def _run(rank, world_size, config):
                                     raise ValueError(f"Invalid label: {sampling_label[i]}")
                                 w = sampling_cfg_w[i].item()
                                 
-                                file.write(f">{i} | label: {sequence_label} | cfg_w: {w}\n")
+                                file.write(f">{i} label:{sequence_label} cfg_w:{w} sampling_steps:{config.sampling.steps}\n")
                                 file.write(seq + "\n")
                             
-                                current_table.add_data(step, i, sequence_label, w, seq) # workaround
+                                current_table.add_data(step, i, sequence_label, w, config.sampling.steps, seq) # workaround
                         run.log({"samples": current_table}, step=step)
                         global_table = current_table # workaround
 
