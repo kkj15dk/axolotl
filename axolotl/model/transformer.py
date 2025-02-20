@@ -11,12 +11,6 @@ from huggingface_hub import PyTorchModelHubMixin
 from omegaconf import OmegaConf
 
 from . import rotary
-from .fused_add_dropout_scale import (
-    bias_dropout_add_scale_fused_train, 
-    bias_dropout_add_scale_fused_inference, 
-    get_bias_dropout_add_scale, 
-    # modulate_fused,
-)
 
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
@@ -280,14 +274,6 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
 
         self.output_layer = DDitFinalLayer(config.model.hidden_size, self.vocab_size, config.model.cond_dim)
         self.scale_by_sigma = config.model.scale_by_sigma
-
-
-    def _get_bias_dropout_scale(self):
-        return (
-            bias_dropout_add_scale_fused_train
-            if self.training
-            else bias_dropout_add_scale_fused_inference
-        )
 
 
     def forward(self, indices, sigma, label):
