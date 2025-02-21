@@ -2,7 +2,7 @@
 ### General options 
 ### -- specify queue -- 
 #BSUB -q gpua100
-#BSUB -R "select[gpu40gb]"
+#BSUB -R "select[gpu80gb]"
 ### -- if your job needs to depend on another job --
 ###BSUB -w "done(23988842)"
 ### -- set the job Name -- 
@@ -30,4 +30,4 @@ module load python3/3.13.0
 source .venv/bin/activate
 
 # here follow the commands you want to execute
-python3 axolotl/train.py graph.type=absorb data.tokenizer_path=/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb
+python3 axolotl/train.py graph.type=absorb data.tokenizer_path=/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb data.name=IPR036736_90_grouped data.train_path=/work3/s204514/datasets/IPR036736_90_grouped/train data.valid_path=/work3/s204514/datasets/IPR036736_90_grouped/valid sampling.length=1024 training.batch_size=64 training.accum=2
