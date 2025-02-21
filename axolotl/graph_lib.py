@@ -148,20 +148,8 @@ class Uniform(Graph):
     def sample_transition(self, i, sigma):
         move_chance = 1 - (-sigma).exp()
 
-        if i.is_nested: # TODO: check if this works as intended
-            move_indices_list = [
-                torch.rand(len, device=i.device) < mc.item() for len, mc in zip(i.offsets().diff(), move_chance.unbind())
-            ]
-            move_indices = torch.nested.nested_tensor(
-                move_indices_list, layout=torch.jagged
-            )
-
-            i_pert = torch.nested.nested_tensor([
-                torch.where(mi, torch.randint_like(t, self.dim), t) for mi, t in zip(move_indices.unbind(), i.unbind())
-            ], layout=torch.jagged)
-        else:
-            move_indices = torch.rand(*i.shape, device=i.device) < move_chance
-            i_pert = torch.where(move_indices, torch.randint_like(i, self.dim), i)
+        move_indices = torch.rand_like(i, device=i.device) < move_chance
+        i_pert = torch.where(move_indices, torch.randint_like(i, self.dim), i)
         return i_pert
 
     def staggered_score(self, score, dsigma):
@@ -254,26 +242,9 @@ class Absorbing(Graph):
 
     def sample_transition(self, i, sigma):
         move_chance = 1 - (-sigma).exp()
-        # move_indices = torch.rand(*i.shape, device=i.device) < move_chance # TODO: using rand_like, when it becomes available https://github.com/pytorch/pytorch/pull/144889
-        
-        if i.is_nested:
-            move_indices_list = [
-                torch.rand(len, device=i.device) < mc.item() for len, mc in zip(i.offsets().diff(), move_chance.unbind())
-            ]
-            move_indices = torch.nested.nested_tensor(
-                move_indices_list, layout=torch.jagged
-            )
-            # TODO: for some reason masked_fill does not work, even though i and move_indices are the same shape
-            # i_pert = i.masked_fill(move_indices, self.dim - 1)
-            # Usng where instead
 
-            i_pert = torch.nested.nested_tensor([
-                torch.where(mi, self.dim - 1, t) for mi, t in zip(move_indices.unbind(), i.unbind())
-            ], layout=torch.jagged)
-        else:
-            # Handle regular tensors
-            move_indices = torch.rand(*i.shape, device=i.device) < move_chance
-            i_pert = torch.where(move_indices, self.dim - 1, i)
+        move_indices = torch.rand_like(i, device=i.device) < move_chance
+        i_pert = torch.where(move_indices, self.dim - 1, i)
             
         return i_pert
     
