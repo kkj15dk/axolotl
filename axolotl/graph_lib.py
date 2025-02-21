@@ -148,7 +148,7 @@ class Uniform(Graph):
     def sample_transition(self, i, sigma):
         move_chance = 1 - (-sigma).exp()
 
-        move_indices = torch.rand_like(i, device=i.device) < move_chance
+        move_indices = torch.rand_like(i.float(), device=i.device) < move_chance
         i_pert = torch.where(move_indices, torch.randint_like(i, self.dim), i)
         return i_pert
 
@@ -170,7 +170,7 @@ class Uniform(Graph):
             score, offsets = packed_tensor_from_jagged(score)
             x, _ = packed_tensor_from_jagged(x)
             x0, _ = packed_tensor_from_jagged(x0)
-            esigm1 = expand_using_offsets(esigm1, offsets).squeeze(-1)
+            esigm1, _ = expand_using_offsets(esigm1, offsets)
         else:
             esigm1 = esigm1.expand_as(x)
             offsets = None
@@ -243,7 +243,7 @@ class Absorbing(Graph):
     def sample_transition(self, i, sigma):
         move_chance = 1 - (-sigma).exp()
 
-        move_indices = torch.rand_like(i, device=i.device) < move_chance
+        move_indices = torch.rand_like(i.float(), device=i.device) < move_chance
         i_pert = torch.where(move_indices, self.dim - 1, i)
             
         return i_pert
@@ -269,7 +269,7 @@ class Absorbing(Graph):
             score, offsets = packed_tensor_from_jagged(score)
             x, _ = packed_tensor_from_jagged(x)
             x0, _ = packed_tensor_from_jagged(x0)
-            esigm1 = expand_using_offsets(esigm1, offsets).squeeze(-1)
+            esigm1, _ = expand_using_offsets(esigm1, offsets)
         else:
             esigm1 = esigm1.expand_as(x)
             offsets = None

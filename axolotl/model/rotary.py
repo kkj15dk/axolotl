@@ -63,13 +63,6 @@ class Rotary(torch.nn.Module):
                 layout=torch.jagged
             ).contiguous()
 
-            # old implementation
-            # cos = self.cos_cached.squeeze(0)
-            # sin = self.sin_cached.squeeze(0)
-            # nested_cos_list = [cos[:n] for n in x.offsets().diff()]
-            # nested_sin_list = [sin[:n] for n in x.offsets().diff()]
-            # sin_nested = torch.nested.as_nested_tensor(nested_sin_list, device=x.device, layout=torch.jagged)
-            # cos_nested = torch.nested.as_nested_tensor(nested_cos_list, device=x.device, layout=torch.jagged)
             return cos_nested, sin_nested
 
         return self.cos_cached, self.sin_cached
@@ -86,30 +79,11 @@ def rotate_half(x):
 
 # @torch.jit.script # TODO: I don't think this is supported for torchscript with nested tensors
 # def _apply_rotary_pos_emb_torchscript(qkv, cos, sin):
-def _apply_rotary_pos_emb(qkv, cos, sin): # qkv shape: (B, j1, 3, n_heads, head_dim), cos & sin shape: (1, j1.max(), 1, head_dim)
-
-    # if qkv.is_nested:
-
-    #     cos = cos.squeeze(0)
-    #     sin = sin.squeeze(0)
-
-    #     # slow list comprehension TODO: optimize
-    #     result_list = [(t * cos[:t.shape[0]]) + (rotate_half(t) * sin[:t.shape[0]]) for t in qkv.unbind()]
-         
-    #     # Reassemble the list of tensors back into a nested tensor
-    #     return torch.nested.as_nested_tensor(result_list, layout=torch.jagged)
+def _apply_rotary_pos_emb(qkv, cos, sin): 
 
     return (qkv * cos) + (rotate_half(qkv) * sin)
 
 
 def apply_rotary_pos_emb(qkv, cos, sin):
-    # try:
-    #     import flash_attn.layers.rotary
-    #     cos = cos[0,:,0,0,:cos.shape[-1]//2]
-    #     sin = sin[0,:,0,0,:sin.shape[-1]//2]
-    #     return flash_attn.layers.rotary.apply_rotary_emb_qkv_(
-    #         qkv, cos, sin
-    #     )
-    # except:
-    #     return _apply_rotary_pos_emb_torchscript(qkv, cos, sin)
+
     return _apply_rotary_pos_emb(qkv, cos, sin)

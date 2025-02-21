@@ -35,20 +35,28 @@ def coerce_offsets(src, tgt):
         mb_get_size(src._max_seqlen_tensor) if tgt._max_seqlen_tensor is None else mb_get_size(tgt._max_seqlen_tensor),
     )
 
-def expand_using_offsets(tensor, offsets):
+def expand_using_offsets(tensor: torch.Tensor, offsets: torch.Tensor):
+    '''Expands a 2D tensor, where the second dim is 1, using offsets, and then packs it into a single dimension'''
     assert tensor.shape[0] == (len(offsets) - 1), f"{tensor.shape[0]} != {len(offsets) - 1}"
+    assert tensor.dim() == 2, f"Expected 2D tensor, got {tensor.dim()}D tensor"
+    assert tensor.shape[1] == 1, f"Expected tensor with second dim 1, got {tensor.shape[1]}"
 
     # Compute sizes based on offsets
-    sizes = offsets.diff().tolist()
-    shape = tensor.shape
+    lengths = offsets.diff()
+    max_len = lengths.max().item()
     
-    # Expand each segment of the tensor to match the corresponding size
-    expanded_segments = [tensor[i].expand(size, *shape[1:]) for i, size in enumerate(sizes)]
+    tensor = tensor.expand(-1, max_len).contiguous()
 
-    # Concatenate the expanded segments back into a single tensor
-    expanded_tensor = torch.cat(expanded_segments, dim=0)
-    
-    return expanded_tensor
+    tensor = torch.nested.narrow(
+        tensor, 
+        dim=1,
+        start=0,
+        length=lengths,
+        layout=torch.jagged
+    ).contiguous()
+
+    tensor, offsets = packed_tensor_from_jagged(tensor)
+    return tensor, offsets
 
 def padded_from_jagged(tensor, pad_value=0.0):
     offsets = tensor.offsets()
