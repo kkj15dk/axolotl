@@ -289,7 +289,7 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         if self.label_method == 'new':
             sigma_embed = self.sigma_map(sigma)
             label_embed = self.label_embed(label)
-            c = F.silu(sigma_embed + label)
+            c = F.silu(sigma_embed + label_embed)
 
         rotary_cos_sin = self.rotary_emb(x)
 
