@@ -180,8 +180,8 @@ class Uniform(Graph):
         )
         if score.is_nested:
             score, offsets = packed_tensor_from_jagged(score)
-            x, off1 = packed_tensor_from_jagged(x)
-            x0, off2 = packed_tensor_from_jagged(x0)
+            x, _ = packed_tensor_from_jagged(x)
+            x0, _ = packed_tensor_from_jagged(x0)
             esigm1 = expand_using_offsets(esigm1, offsets).squeeze(-1)
         else:
             esigm1 = esigm1.expand_as(x)
@@ -296,8 +296,8 @@ class Absorbing(Graph):
 
         if score.is_nested:
             score, offsets = packed_tensor_from_jagged(score)
-            x, off1 = packed_tensor_from_jagged(x)
-            x0, off2 = packed_tensor_from_jagged(x0)
+            x, _ = packed_tensor_from_jagged(x)
+            x0, _ = packed_tensor_from_jagged(x0)
             esigm1 = expand_using_offsets(esigm1, offsets).squeeze(-1)
         else:
             esigm1 = esigm1.expand_as(x)

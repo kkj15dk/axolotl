@@ -286,8 +286,8 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         rotary_cos_sin = self.rotary_emb(x)
 
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-            for i in range(len(self.blocks)):
-                x = self.blocks[i](x, rotary_cos_sin, c)
+            for block in self.blocks:
+                x = block(x, rotary_cos_sin, c)
 
             x = self.output_layer(x, c)
 
