@@ -275,13 +275,21 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         self.output_layer = DDitFinalLayer(config.model.hidden_size, self.vocab_size, config.model.cond_dim)
         self.scale_by_sigma = config.model.scale_by_sigma
 
+        self.label_method = config.model.label_method
+
 
     def forward(self, indices, sigma, label):
 
         x = self.vocab_embed(indices)
-        sigma_embed = F.silu(self.sigma_map(sigma))
-        label_embed = F.silu(self.label_embed(label)) # TODO: is this an appropriate way to add label embeddings?
-        c = sigma_embed + label_embed
+
+        if self.label_method == 'old':
+            sigma_embed = F.silu(self.sigma_map(sigma))
+            label_embed = F.silu(self.label_embed(label)) # TODO: is this an appropriate way to add label embeddings?
+            c = sigma_embed + label_embed
+        if self.label_method == 'new':
+            sigma_embed = self.sigma_map(sigma)
+            label_embed = self.label_embed(label)
+            c = F.silu(sigma_embed + label)
 
         rotary_cos_sin = self.rotary_emb(x)
 
