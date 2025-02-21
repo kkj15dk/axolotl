@@ -232,8 +232,9 @@ def get_pc_sampler(graph,
                 if isinstance(cfg_w, list):
                     assert batch_size == len(cfg_w), f'cfg_w must have length {batch_size}, got {len(cfg_w)}'
                     cfg_w = torch.tensor(cfg_w, device=device)
-                assert isinstance(cfg_w, float), f'cfg must be an float, a list of floats, or "testing", got {cfg_w}'
-                cfg_w = cfg_w * torch.ones(batch_size, device=device)
+                else:
+                    assert isinstance(cfg_w, float), f'cfg must be an float, a list of floats, or "testing", got {cfg_w}'
+                    cfg_w = cfg_w * torch.ones(batch_size, device=device)
 
 
         sampling_score_fn = mutils.get_score_fn(model, train=False, sampling=True, use_cfg=use_cfg, num_labels=num_labels)
