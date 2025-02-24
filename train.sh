@@ -30,4 +30,5 @@ module load python3/3.13.0
 source .venv/bin/activate
 
 # here follow the commands you want to execute
-python3 axolotl/train.py graph.type=absorb data.tokenizer_path=/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb
+# graph.type=absorb, uniform noise.type=loglinear, geometric
+python3 axolotl/train.py graph.type=absorb noise.type=loglinear
