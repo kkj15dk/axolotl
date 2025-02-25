@@ -17,6 +17,9 @@ def preprocess(example: dict,
 ):
     sequence = example[sequence_key]
     label = example[label_key]
+    assert isinstance(sequence, str), f"sequence is not a string: {sequence}"
+    assert isinstance(label, int), f"label is not an int: {label}"
+
     if label == 2: # Prokaryotic
         label = 0
     elif label == 2759: # Eukaryotic
@@ -85,8 +88,8 @@ def stream_groupby_gen(dataset: Dataset,
 def main():
 
     parser = argparse.ArgumentParser(description="Convert csv to nested dataset")
-    parser.add_argument("--input_path", default='/datasets/test_sorted.csv', type=str)
-    parser.add_argument("--output_path", default='/datasets/', type=str)
+    parser.add_argument("--input_path", default='datasets/test_sorted.csv', type=str)
+    parser.add_argument("--output_path", default='datasets/', type=str)
     parser.add_argument("--filename_encoded", default='test_encoded', type=str)
     parser.add_argument("--filename_grouped", default='test_grouped', type=str)
     parser.add_argument("--sequence_key", default='sequence', type=str)
