@@ -174,7 +174,7 @@ def _run(rank, world_size, config):
 
 
     if config.training.snapshot_sampling:
-        batch_size = config.eval.batch_size // (config.ngpus * config.training.accum)
+        batch_size = config.eval.batch_size // config.ngpus
         sampling_shape = (batch_size, config.sampling.length)
         sampling_fn = sampling.get_sampling_fn(config, graph, noise, sampling_shape, sampling_eps, device)
 
