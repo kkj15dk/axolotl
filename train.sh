@@ -31,4 +31,4 @@ source .venv/bin/activate
 
 # here follow the commands you want to execute
 # graph.type=absorb, uniform noise.type=loglinear, geometric
-python3 axolotl/train.py graph.type=uniform noise.type=loglinear
+python3 axolotl/train.py graph.type=absorb noise.type=loglinear
