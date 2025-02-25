@@ -223,7 +223,7 @@ def get_pc_sampler(graph,
                 if batch_size == 1:
                     cfg_w = torch.tensor([1], device=device)
                 elif batch_size == 2:
-                    cfg_w = torch.tensor([0, 1], device=device)
+                    cfg_w = torch.tensor([1, 0], device=device)
                 else:
                     cfg_w = torch.cat([torch.tensor([1], device=device),
                                        torch.linspace(0, 10, batch_size - 1, device=device)
@@ -233,7 +233,7 @@ def get_pc_sampler(graph,
                     assert batch_size == len(cfg_w), f'cfg_w must have length {batch_size}, got {len(cfg_w)}'
                     cfg_w = torch.tensor(cfg_w, device=device)
                 else:
-                    assert isinstance(cfg_w, float), f'cfg must be an float, a list of floats, or "testing", got {cfg_w}'
+                    assert isinstance(cfg_w, float), f'cfg must be a float, a list of floats, or "testing", got {cfg_w}'
                     cfg_w = cfg_w * torch.ones(batch_size, device=device)
 
 
