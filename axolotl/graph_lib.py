@@ -193,7 +193,7 @@ class Uniform(Graph):
             ((-ratio.log() - 1) / ratio - (self.dim - 2)) / self.dim 
         )
 
-        #positive term
+        # positive term
         sexp = score.exp()
         pos_term = sexp.mean(dim=-1) - torch.gather(sexp, -1, x[..., None]).squeeze(-1) / self.dim
         entropy = pos_term - neg_term + const
@@ -281,7 +281,7 @@ class Absorbing(Graph):
         # negative_term
         neg_term = ratio * torch.gather(score[rel_ind], -1, other_ind[..., None]).squeeze(-1)
 
-        #positive term
+        # positive term
         pos_term = score[rel_ind][:, :-1].exp().sum(dim=-1)
 
         # constant term

@@ -220,7 +220,7 @@ def _run(rank, world_size, config):
             if step > 0 and step % config.training.snapshot_freq == 0 or step == num_train_steps:
                 # Save the checkpoint.
                 save_step = step // config.training.snapshot_freq
-                if rank == 0:
+                if rank == 0 and config.training.snapshot_checkpoint:
                     utils.save_checkpoint(os.path.join(
                         checkpoint_dir, f'checkpoint_{save_step}.pth'), state)
 

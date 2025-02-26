@@ -18,6 +18,7 @@ training:
   snapshot_freq_for_preemption: 1000
   weight: standard
   snapshot_sampling: True
+  snapshot_checkpoint: False
   ema: 0.9999
 
 data:
@@ -76,7 +77,7 @@ wandb:
 
 hydra:
   run:
-    dir: exp_local/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
+    dir: /work3/s204514/exp_local/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
     # dir: exp_local/work3/s204514/datasets/IPR036736_90_grouped/train/2025.01.24/113805
   sweep:
     dir: exp/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
