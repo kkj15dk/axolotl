@@ -160,14 +160,14 @@ class Uniform(Graph):
     def sample_limit(self, *batch_dims):
         return torch.randint(0, self.dim, batch_dims)
 
-    def score_entropy(self, score, sigma, x, x0):
+    def score_entropy(self, log_score, sigma, x, x0):
         esigm1 = torch.where(
             sigma < 0.5,
             torch.expm1(sigma),
             torch.exp(sigma) - 1
         )
-        if score.is_nested:
-            score, offsets = packed_tensor_from_jagged(score)
+        if log_score.is_nested:
+            log_score, offsets = packed_tensor_from_jagged(log_score)
             x, _ = packed_tensor_from_jagged(x)
             x0, _ = packed_tensor_from_jagged(x0)
             esigm1, _ = expand_using_offsets(esigm1, offsets)
@@ -178,12 +178,12 @@ class Uniform(Graph):
         ratio = 1 - self.dim / (esigm1 + self.dim)
 
         # negative term
-        neg_term = score.mean(dim=-1) - torch.gather(score, -1, x[..., None]).squeeze(-1) / self.dim
+        neg_term = log_score.mean(dim=-1) - torch.gather(log_score, -1, x[..., None]).squeeze(-1) / self.dim
         # no move means scaling by the uniform ratio. move means alter only one ratio away from 1
         neg_term = torch.where(
             x == x0,
             ratio * neg_term,
-            torch.gather(score, -1, x0[..., None]).squeeze(-1) / esigm1 + neg_term
+            torch.gather(log_score, -1, x0[..., None]).squeeze(-1) / esigm1 + neg_term
         )
 
         # constant factor
@@ -194,7 +194,7 @@ class Uniform(Graph):
         )
 
         # positive term
-        sexp = score.exp()
+        sexp = log_score.exp()
         pos_term = sexp.mean(dim=-1) - torch.gather(sexp, -1, x[..., None]).squeeze(-1) / self.dim
         entropy = pos_term - neg_term + const
         
@@ -258,15 +258,15 @@ class Absorbing(Graph):
     def sample_limit(self, *batch_dims):
         return (self.dim - 1) * torch.ones(*batch_dims, dtype=torch.int64)
 
-    def score_entropy(self, score, sigma, x, x0):
+    def score_entropy(self, log_score, sigma, x, x0):
         esigm1 = torch.where(
             sigma < 0.5,
             torch.expm1(sigma),
             torch.exp(sigma) - 1
         )
 
-        if score.is_nested:
-            score, offsets = packed_tensor_from_jagged(score)
+        if log_score.is_nested:
+            log_score, offsets = packed_tensor_from_jagged(log_score)
             x, _ = packed_tensor_from_jagged(x)
             x0, _ = packed_tensor_from_jagged(x0)
             esigm1, _ = expand_using_offsets(esigm1, offsets)
@@ -279,10 +279,10 @@ class Absorbing(Graph):
         other_ind = x0[rel_ind]
 
         # negative_term
-        neg_term = ratio * torch.gather(score[rel_ind], -1, other_ind[..., None]).squeeze(-1)
+        neg_term = ratio * torch.gather(log_score[rel_ind], -1, other_ind[..., None]).squeeze(-1)
 
         # positive term
-        pos_term = score[rel_ind][:, :-1].exp().sum(dim=-1)
+        pos_term = log_score[rel_ind][:, :-1].exp().sum(dim=-1)
 
         # constant term
         const = ratio * (ratio.log() - 1)
