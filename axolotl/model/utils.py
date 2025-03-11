@@ -45,6 +45,7 @@ def get_score_fn(model, train=False, sampling=False, use_cfg=False, num_labels=N
         def score_fn(x, sigma, label):
 
             if use_cfg: # use classifier-free guidance for sampling
+                assert sampling, "Must be sampling when using cfg"
                 assert num_labels is not None, "Must provide num_labels if using cfg"
                 x = torch.cat([x,x], dim=0)
                 sigma = torch.cat([sigma, sigma], dim=0)
