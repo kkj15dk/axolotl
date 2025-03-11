@@ -37,33 +37,50 @@ def maybe_truncate(input_ids, max_len, generator=None):
     return input_ids
 
 
-def get_dataloaders(config, distributed=True):
-    if config.training.batch_size % (config.ngpus * config.training.accum) != 0:
-            raise ValueError(f"Train Batch Size {config.training.batch_size} is not divisible by {config.ngpus} gpus with accumulation {config.training.accum}.")
-    if config.eval.batch_size % (config.ngpus * config.training.accum) != 0:
-        raise ValueError(f"Eval Batch Size for {config.eval.batch_size} is not divisible by {config.ngpus} gpus with accumulation {config.training.accum}.")
+def get_dataloaders(train_batch_size,
+                    valid_batch_size,
+                    ngpus,
+                    accum,
+                    train_path,
+                    valid_path,
+                    max_length,
+                    drop_last,
+                    distributed=True
+):
+    if train_batch_size % (ngpus * accum) != 0:
+            raise ValueError(f"Train Batch Size {train_batch_size} is not divisible by {ngpus} gpus with accumulation {accum}.")
+    if valid_batch_size % (ngpus * accum) != 0:
+        raise ValueError(f"Eval Batch Size for {valid_batch_size} is not divisible by {ngpus} gpus with accumulation {accum}.")
 
-    train_set = get_dataset(config.data.train_path)
-    valid_set = get_dataset(config.data.valid_path)
+    train_set = get_dataset(train_path)
+    valid_set = get_dataset(valid_path)
 
     if distributed:
         train_sampler = DistributedSequencePackingSampler(train_set,
-                                                          max_length=config.model.length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
-                                                          total_length=config.model.length * config.training.batch_size // (config.ngpus * config.training.accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
-                                                          drop_last=config.training.drop_last,
+                                                          max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                          total_length=max_length * valid_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                          drop_last=drop_last,
         )
         val_sampler = DistributedSequencePackingSampler(valid_set, 
-                                                        max_length=config.model.length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
-                                                        total_length=config.model.length * config.training.batch_size // (config.ngpus * config.training.accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
-                                                        drop_last=config.training.drop_last,
+                                                        max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                        total_length=max_length * valid_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                        drop_last=drop_last,
         )
     else:
-        train_sampler = None
-        val_sampler = None
+        train_sampler = SequencePackingSampler(train_set,
+                                               max_length=max_length, 
+                                               total_length=max_length * train_batch_size // (ngpus * accum), 
+                                               drop_last=drop_last,
+        )
+        val_sampler = SequencePackingSampler(valid_set, 
+                                             max_length=max_length, 
+                                             total_length=max_length * valid_batch_size // (ngpus * accum), 
+                                             drop_last=drop_last,
+        )
 
     train_loader = cycle_loader(DataLoader(
         train_set,
-        # batch_size=config.training.batch_size // (config.ngpus * config.training.accum),
+        # batch_size=.batch_size // (config.ngpus * .accum),
         batch_sampler=train_sampler,
         num_workers=8,
         collate_fn=train_sampler.collate_fn,
@@ -73,7 +90,7 @@ def get_dataloaders(config, distributed=True):
     ))
     valid_loader = cycle_loader(DataLoader(
         valid_set,
-        # batch_size=config.eval.batch_size // (config.ngpus * config.training.accum),
+        # batch_size=config.eval.batch_size // (config.ngpus * .accum),
         batch_sampler=val_sampler,
         num_workers=8,
         collate_fn=val_sampler.collate_fn,

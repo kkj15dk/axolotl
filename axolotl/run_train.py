@@ -149,7 +149,16 @@ def _run(rank, world_size, config):
     tokenizer: PreTrainedTokenizerFast = PreTrainedTokenizerFast.from_pretrained(config.data.tokenizer_path)
 
     # Build data iterators
-    train_ds, eval_ds = data.get_dataloaders(config)
+    train_ds, eval_ds = data.get_dataloaders(config.training.batch_size,
+                                             config.eval.batch_size,
+                                             config.ngpus,
+                                             config.training.accum,
+                                             config.data.train_path,
+                                             config.data.eval_path,
+                                             config.model.length,
+                                             config.traininng.drop_last,
+                                             distributed=True,
+    )
 
     # mprint(f"Length of datasets: {len(train_ds)}, {len(eval_ds)}")
 
