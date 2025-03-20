@@ -7,33 +7,48 @@ from . import graph_lib
 from .model import utils as mutils
 
 
-def get_loss_fn(noise, graph: graph_lib.Graph, train, sampling_eps=1e-3, lv=False):
+def get_loss_fn(noise, graph: graph_lib.Graph, train, prediction_type='log_score', t_sampling='uniform', sampling_eps=1e-3):
 
-    def loss_fn(model, input_ids, label, t=None, perturbed_batch=None):
+    def loss_fn(model, input_ids, label):
         """
         Batch shape: [B, L] int. D given from graph
         """
 
-        if t is None:
-            if lv:
-                raise NotImplementedError("Yeah I gotta do this later")
-            else:
-                t = (1 - sampling_eps) * torch.rand(input_ids.shape[0], device=input_ids.device) + sampling_eps
-            
-        sigma, dsigma = noise(t)
+        bs = input_ids.shape[0]
+
+        if t_sampling == 'uniform':
+            t = torch.rand(bs, device=input_ids.device)
+        elif t_sampling == 'antithetic':
+            t0 = torch.rand((1,), device=input_ids.device).item()
+            t = torch.remainder(t0 + torch.arange(start=0, end=1, step=1/bs, device=input_ids.device), 1)
+        beta, dbeta = noise(t, beta=True, dbeta=True)
         
-        if perturbed_batch is None:
-            perturbed_batch = graph.sample_transition(input_ids, sigma[:, None])
+        perturbed_batch = graph.sample_transition(input_ids, beta[:, None])
 
-        log_score_fn = mutils.get_score_fn(model, train=train, sampling=False)
-        log_score = log_score_fn(perturbed_batch, sigma, label)
-        loss = graph.score_entropy(log_score, sigma[:, None], perturbed_batch, input_ids) # loss shape: (B, j1)
+        if prediction_type == 'log_score':
+            log_score_fn = mutils.get_output_fn(model, train=train, exponentiate=False)
+            log_score = log_score_fn(perturbed_batch, beta, label)
+            loss = graph.score_entropy(log_score, beta[:, None], perturbed_batch, input_ids) # loss shape: (B, j1)
 
-        if log_score.is_nested:
-            loss = (dsigma[:, None] * loss)
+            if log_score.is_nested:
+                loss = (dbeta[:, None] * loss)
+            else:
+                raise NotImplementedError("Not implemented yet, shouldn't use sum if i use mean for nested tensor loss")
+                loss = (dbeta[:, None] * loss).sum(dim=-1)
+
+        elif prediction_type == 'x0':
+            logits_fn = mutils.get_output_fn(model, train=train, exponentiate=False)
+            logits = logits_fn(perturbed_batch, beta, label)
+
+            alpha_t1 = noise(t=0.0, alpha=True)
+            print("alpha_t1", alpha_t1)
+            dgamma_times_alpha = noise(t, dgamma_times_alpha=True)
+            print("dgamma_times_alpha", dgamma_times_alpha)
+
+            loss = graph.x0_entropy(logits, alpha_t1, dgamma_times_alpha[:, None], perturbed_batch, input_ids) # loss shape: (B, j1)
+        
         else:
-            raise NotImplementedError("Not implemented yet, shouldn't use sum if i use mean for nested tensor loss")
-            loss = (dsigma[:, None] * loss).sum(dim=-1)
+            raise NotImplementedError(f"Prediction type {prediction_type} not implemented yet!")
 
         return loss
 
@@ -79,8 +94,8 @@ def optimization_manager(config):
     return optimize_fn
 
 
-def get_step_fn(noise, graph, train, optimize_fn, accum):
-    loss_fn = get_loss_fn(noise, graph, train)
+def get_step_fn(noise, graph, train, optimize_fn, accum, prediction_type, t_sampling):
+    loss_fn = get_loss_fn(noise, graph, train, prediction_type, t_sampling)
 
     accum_iter = 0
     total_loss = 0

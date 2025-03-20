@@ -36,31 +36,27 @@ def get_model_fn(model, train=False):
     return model_fn
 
 
-def get_score_fn(model, train=False, sampling=False, use_cfg=False, num_labels=None):
-    if sampling:
-        assert not train, "Must sample in eval mode"
+def get_output_fn(model, train=False, exponentiate=False, use_cfg=False, num_labels=None):
+
     model_fn = get_model_fn(model, train=train)
 
     with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-        def score_fn(x, sigma, label):
+        def output_fn(x, sigma, label):
 
             if use_cfg: # use classifier-free guidance for sampling
-                assert sampling, "Must be sampling when using cfg"
+                assert not train, "Must be sampling when using cfg"
                 assert num_labels is not None, "Must provide num_labels if using cfg"
                 x = torch.cat([x,x], dim=0)
                 sigma = torch.cat([sigma, sigma], dim=0)
                 uncond = torch.ones_like(label, dtype=torch.long) * num_labels # assume that the uncond label is the last label
                 label = torch.cat([label, uncond], dim=0)
 
-
-            # sigma = sigma.reshape(-1)
-
-            score = model_fn(x, sigma, label)
+            output = model_fn(x, sigma, label)
             
-            if sampling:
+            if exponentiate:
                 # when sampling return true score (not log used for training)
-                return score.exp()
+                return output.exp()
                 
-            return score
+            return output
 
-    return score_fn
+    return output_fn
