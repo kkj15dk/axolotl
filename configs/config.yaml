@@ -1,6 +1,7 @@
 defaults:
   - _self_
   - model: small
+  - model: small
   - override hydra/launcher: basic # submitit_slurm
 
 ngpus: 1
@@ -17,10 +18,12 @@ num_labels: 2 # prokaryotic (0), eukaryotic (1)
 # medium => batch_size=8
 
 training:
-  batch_size: 2 # effective 16 batch size with 8 accum (128)
+  batch_size: 2 
   drop_last: True
+  num_workers: 4 # number of workers for each dataloader
   accum: 1
   n_iters: 1300001
+  snapshot_freq: 200
   snapshot_freq: 200
   log_freq: 50
   eval_freq: 100
@@ -29,6 +32,8 @@ training:
   snapshot_sampling: True
   snapshot_checkpoint: False
   ema: 0.9999
+  prediction_type: 'x0' # 'log_score' or 'x0'
+  t_sampling: 'antithetic' # 'antithetic' or 'uniform'
 
 data:
   # name: IPR036736_90_grouped
@@ -42,17 +47,18 @@ data:
   # name: UniRef50_grouped
   # train_path: /work3/s204514/datasets/UniRef50_grouped/train
   # valid_path: /work3/s204514/datasets/UniRef50_grouped/valid
-  # tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb'
+  # # tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb'
   # tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_uniform'
 
 graph:
+  type: absorb
   type: absorb
   file: data
   report_all: False
 
 noise:
-  type: loglinear
-  eps: 1e-3
+  type: linear # SEDD noise: 'loglinear', or 'geometric'. MD4 noise: 'linear', or 'cosine'.
+  eps: 1e-4
   sigma_min: 1e-4
   sigma_max: 20
 
@@ -66,7 +72,9 @@ sampling:
 
 eval:
   batch_size: 8
+  batch_size: 8
   perplexity: True
+  perplexity_batch_size: 2
   perplexity_batch_size: 2
 
 optim:
@@ -81,13 +89,14 @@ optim:
 
 wandb:
   use_wandb: False
+  use_wandb: False
   entity: kkj15dk-axolotl
   project: axolotl
 
 hydra:
   run:
-    dir: exp_local/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
     # dir: /work3/s204514/exp_local/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
+    dir: exp_local/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
     # dir: exp_local/work3/s204514/datasets/IPR036736_90_grouped/train/2025.01.24/113805
   sweep:
     dir: exp/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}

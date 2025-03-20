@@ -239,7 +239,7 @@ def get_pc_sampler(graph,
                     cfg_w = cfg_w * torch.ones(batch_size, device=device)
 
 
-        sampling_score_fn = mutils.get_score_fn(model, train=False, sampling=True, use_cfg=use_cfg, num_labels=num_labels)
+        sampling_score_fn = mutils.get_output_fn(model, train=False, exponentiate=True, use_cfg=use_cfg, num_labels=num_labels)
         x = graph.sample_limit(*batch_dims).to(device)
         timesteps = torch.linspace(1, eps, steps + 1, device=device)
         dt = (1 - eps) / steps

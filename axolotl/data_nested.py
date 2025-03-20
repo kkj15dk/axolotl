@@ -45,6 +45,7 @@ def get_dataloaders(train_batch_size,
                     valid_path,
                     max_length,
                     drop_last,
+                    num_workers,
                     distributed=True
 ):
     if train_batch_size % (ngpus * accum) != 0:
@@ -58,7 +59,7 @@ def get_dataloaders(train_batch_size,
     if distributed:
         train_sampler = DistributedSequencePackingSampler(train_set,
                                                           max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
-                                                          total_length=max_length * valid_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                          total_length=max_length * train_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
                                                           drop_last=drop_last,
         )
         val_sampler = DistributedSequencePackingSampler(valid_set, 
@@ -82,7 +83,7 @@ def get_dataloaders(train_batch_size,
         train_set,
         # batch_size=.batch_size // (config.ngpus * .accum),
         batch_sampler=train_sampler,
-        num_workers=4,
+        num_workers=num_workers,
         collate_fn=train_sampler.collate_fn,
         pin_memory=True,
         shuffle=(train_sampler is None),
@@ -92,7 +93,7 @@ def get_dataloaders(train_batch_size,
         valid_set,
         # batch_size=config.eval.batch_size // (config.ngpus * .accum),
         batch_sampler=val_sampler,
-        num_workers=4,
+        num_workers=num_workers,
         collate_fn=val_sampler.collate_fn,
         pin_memory=True,
         shuffle=(val_sampler is None),

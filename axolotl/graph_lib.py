@@ -70,6 +70,7 @@ class Graph(abc.ABC):
         """
         Samples the transition vector.
         """
+        assert sigma is not None
         transition_vector = self.transition(i, sigma)
         return sample_categorical(transition_vector, method="hard")
     
@@ -112,17 +113,24 @@ class Graph(abc.ABC):
         """
         pass
 
+    @abc.abstractmethod
+    def x0_entropy(self, logits, alpha_t1, dgamma_times_alpha, x, x0):
+        """
+        Computes the x0 prediction loss function
+        """
+        pass
+
 
 class Uniform(Graph):
     """
     Everything goes to everything else. Normalized down by dimension to avoid blowup.
     """
     def __init__(self, dim):
-        self._dim = dim
+        self.vocab_size = dim
 
     @property
     def dim(self):
-        return self._dim
+        return self.vocab_size
     
     @property
     def absorb(self):
@@ -136,35 +144,36 @@ class Uniform(Graph):
     def transp_rate(self, i):
         return self.rate(i)
 
-    def transition(self, i, sigma):
-        trans = torch.ones(*i.shape, self.dim, device=i.device) * (1 - (-sigma[..., None]).exp()) / self.dim
+    def transition(self, i, alpha):
+        trans = torch.ones(*i.shape, self.dim, device=i.device) * (1 - alpha[..., None]) / self.dim
         trans = trans.scatter(-1, i[..., None], torch.zeros_like(trans))
         trans = trans.scatter(-1, i[..., None], 1 - trans.sum(dim=-1, keepdim=True))
         return trans
     
-    def transp_transition(self, i, sigma):
-        return self.transition(i, sigma)
+    def transp_transition(self, i, alpha):
+        return self.transition(i, alpha)
 
-    def sample_transition(self, i, sigma):
-        move_chance = 1 - (-sigma).exp()
+    def sample_transition(self, i, alpha):
+
+        move_chance = 1 - alpha
 
         move_indices = torch.rand_like(i.float(), device=i.device) < move_chance
         i_pert = torch.where(move_indices, torch.randint_like(i, self.dim), i)
         return i_pert
 
-    def staggered_score(self, score, dsigma):
+    def staggered_score(self, score, dbeta):
         dim = score.shape[-1]
-        epow = (-dsigma).exp()[..., None]
+        epow = (-dbeta).exp()[..., None]
         return ((epow - 1) / (dim * epow)) * score.sum(dim=-1, keepdim=True) + score / epow
 
     def sample_limit(self, *batch_dims):
         return torch.randint(0, self.dim, batch_dims)
 
-    def score_entropy(self, log_score, sigma, x, x0):
+    def score_entropy(self, log_score, beta, x, x0):
         esigm1 = torch.where(
-            sigma < 0.5,
-            torch.expm1(sigma),
-            torch.exp(sigma) - 1
+            beta < 0.5,
+            torch.expm1(beta),
+            torch.exp(beta) - 1
         )
         if log_score.is_nested:
             log_score, offsets = packed_tensor_from_jagged(log_score)
@@ -199,7 +208,7 @@ class Uniform(Graph):
         entropy = pos_term - neg_term + const
         
         if offsets is not None:
-            entropy = jagged_from_packed_tensor(entropy, offsets)
+            entropy = jagged_from_packed_tensor(entropy, offsets) # B x j1
         
         return entropy
 
@@ -207,11 +216,11 @@ class Uniform(Graph):
 class Absorbing(Graph):
     def __init__(self, dim):
         super().__init__()
-        self._dim = dim
+        self.vocab_size = dim
 
     @property
     def dim(self):
-        return self._dim + 1
+        return self.vocab_size + 1
     
     @property
     def absorb(self):
@@ -230,52 +239,53 @@ class Absorbing(Graph):
     def transition(self, i, sigma):
         pass
     
-    def transp_transition(self, i, sigma):
-        sigma = unsqueeze_as(sigma, i[..., None])
-        edge = (-sigma).exp() * F.one_hot(i, num_classes=self.dim)
+    def transp_transition(self, i, alpha):
+        alpha = unsqueeze_as(alpha, i[..., None])
+        edge = alpha * F.one_hot(i, num_classes=self.dim)
         edge += torch.where(
             i == self.dim - 1,
-            1 - (-sigma).squeeze(-1).exp(),
+            1 - alpha.squeeze(-1),
             0
         )[..., None]
         return edge
 
-    def sample_transition(self, i, sigma):
-        move_chance = 1 - (-sigma).exp()
+    def sample_transition(self, i, alpha):
+        
+        move_chance = 1 - alpha
 
         move_indices = torch.rand_like(i.float(), device=i.device) < move_chance
         i_pert = torch.where(move_indices, self.dim - 1, i)
             
         return i_pert
     
-    def staggered_score(self, score, dsigma):
+    def staggered_score(self, score, dbeta):
         score = score.clone() # yeah yeah whatever we should probably do this
-        extra_const = (1 - (dsigma).exp()) * score.sum(dim=-1)
-        score *= dsigma.exp()[:, None]
+        extra_const = (1 - (dbeta).exp()) * score.sum(dim=-1)
+        score *= dbeta.exp()[:, None]
         score[..., -1] += extra_const
         return score
 
     def sample_limit(self, *batch_dims):
         return (self.dim - 1) * torch.ones(*batch_dims, dtype=torch.int64)
 
-    def score_entropy(self, log_score, sigma, x, x0):
-        esigm1 = torch.where(
-            sigma < 0.5,
-            torch.expm1(sigma),
-            torch.exp(sigma) - 1
+    def score_entropy(self, log_score, beta, x, x0):
+        ebetam1 = torch.where(
+            beta < 0.5,
+            torch.expm1(beta),
+            torch.exp(beta) - 1
         )
 
         if log_score.is_nested:
             log_score, offsets = packed_tensor_from_jagged(log_score)
             x, _ = packed_tensor_from_jagged(x)
             x0, _ = packed_tensor_from_jagged(x0)
-            esigm1, _ = expand_using_offsets(esigm1, offsets)
+            ebetam1, _ = expand_using_offsets(ebetam1, offsets)
         else:
-            esigm1 = esigm1.expand_as(x)
+            ebetam1 = ebetam1.expand_as(x)
             offsets = None
         
         rel_ind = x == self.dim - 1
-        ratio = 1 / esigm1[rel_ind]
+        ratio = 1 / ebetam1[rel_ind]
         other_ind = x0[rel_ind]
 
         # negative_term
@@ -294,4 +304,59 @@ class Absorbing(Graph):
             entropy = jagged_from_packed_tensor(entropy, offsets)
 
         return entropy
+
+    def recon_loss(self, alpha_t1):
+        loss_recon = (
+            (1 - alpha_t1)
+            * np.log(self.dim)
+        ) # B
+        return loss_recon
     
+    def latent_loss(self):
+        # negligible
+        return 0
+
+    def diffusion_loss(self, logits, dgamma_times_alpha, x, x0):
+
+        # convert to flat tensors
+        if logits.is_nested:
+            logits, offsets = packed_tensor_from_jagged(logits)
+            x, _ = packed_tensor_from_jagged(x)
+            x0, _ = packed_tensor_from_jagged(x0)
+            dgamma_times_alpha, _ = expand_using_offsets(dgamma_times_alpha, offsets)
+        else:
+            dgamma_times_alpha = dgamma_times_alpha.expand_as(x)
+            offsets = None
+
+        # MD4 implementation, translated from jax
+        log_p = torch.log_softmax(logits, dim=-1)
+        one_hot_x0 = F.one_hot(x0, num_classes=self.dim)
+        neg_cross_entropy = one_hot_x0 * log_p
+        print("n2", neg_cross_entropy)
+        print(one_hot_x0)
+        neg_cross_entropy = torch.where(one_hot_x0.to(dtype=torch.bool), neg_cross_entropy, 0)
+        print("n2", neg_cross_entropy)
+        neg_cross_entropy = torch.sum(neg_cross_entropy, dim=-1)
+
+        mask = (x == self.dim - 1).float()
+        neg_cross_entropy = -dgamma_times_alpha * neg_cross_entropy * mask
+
+        if offsets is not None:
+            neg_cross_entropy = jagged_from_packed_tensor(neg_cross_entropy, offsets) # (B, j1)
+        
+        return neg_cross_entropy
+    
+    def x0_entropy(self, logits, alpha_t1, dgamma_times_alpha, x, x0):
+
+        # reconsuction loss:
+        loss_recon = self.recon_loss(alpha_t1) # int
+
+        # latent loss:
+        loss_prior = self.latent_loss() # 0
+
+        # diffusion loss:
+        loss_diffusion = self.diffusion_loss(logits, dgamma_times_alpha, x, x0) # (B, j1)
+
+        loss = loss_recon + loss_prior + loss_diffusion
+
+        return loss

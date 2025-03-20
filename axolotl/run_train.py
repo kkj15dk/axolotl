@@ -128,7 +128,7 @@ def _run(rank, world_size, config):
     mprint(f"EMA: {ema}")
 
     # build noise
-    noise = noise_lib.get_noise(config).to(device)
+    noise = noise_lib.get_noise(config.noise.type, config.noise.sigma_min, config.noise.sigma_max, config.noise.eps).to(device)
     noise = DDP(noise, device_ids=[rank], static_graph=True)
     sampling_eps = 1e-5
 
@@ -157,6 +157,7 @@ def _run(rank, world_size, config):
                                              config.data.valid_path,
                                              config.model.length,
                                              config.training.drop_last,
+                                             config.training.num_workers,
                                              distributed=True,
     )
 
@@ -178,8 +179,8 @@ def _run(rank, world_size, config):
 
     # Build one-step training and evaluation functions
     optimize_fn = losses.optimization_manager(config)
-    train_step_fn = losses.get_step_fn(noise, graph, True, optimize_fn, config.training.accum)
-    eval_step_fn = losses.get_step_fn(noise, graph, False, optimize_fn, config.training.accum)
+    train_step_fn = losses.get_step_fn(noise, graph, True, optimize_fn, config.training.accum, config.training.prediction_type, config.training.t_sampling)
+    eval_step_fn = losses.get_step_fn(noise, graph, False, optimize_fn, config.training.accum, config.training.prediction_type, config.training.t_sampling)
 
 
     if config.training.snapshot_sampling:
