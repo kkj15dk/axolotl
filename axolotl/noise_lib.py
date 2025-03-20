@@ -43,6 +43,9 @@ class Scheduler(abc.ABC, nn.Module):
         if dgamma_times_alpha:
             output = output + (self.dgamma_times_beta(t),)
 
+        if len(output) == 1:
+            return output[0]
+
         return output
 
     def beta(self, t):

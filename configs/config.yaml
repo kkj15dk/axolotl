@@ -17,7 +17,7 @@ num_labels: 2 # prokaryotic (0), eukaryotic (1)
 # medium => batch_size=8
 
 training:
-  batch_size: 2 
+  batch_size: 4
   drop_last: True
   num_workers: 4 # number of workers for each dataloader
   accum: 1
@@ -31,7 +31,7 @@ training:
   snapshot_checkpoint: False
   ema: 0.9999
   prediction_type: 'x0' # 'log_score' or 'x0'
-  t_sampling: 'antithetic' # 'antithetic' or 'uniform'
+  t_sampling: 'uniform' # 'antithetic' or 'uniform'
 
 data:
   # name: IPR036736_90_grouped
@@ -61,10 +61,10 @@ noise:
 
 sampling:
   predictor: euler
-  steps: 128
-  length: 1024
+  steps: 64
+  length: 256
   noise_removal: True
-  cfg: 'testing' # cfg_w = 0 => unconditional. cfg_w = 1 => conditional. 0 < cfg_w < 1 => interpolation. cfg_w > 1 => extrapolation. cfg_w = 'testing' => testing different cfg_w at once
+  cfg: 0 # cfg_w = 0 => unconditional. cfg_w = 1 => conditional. 0 < cfg_w < 1 => interpolation. cfg_w > 1 => extrapolation. cfg_w = 'testing' => testing different cfg_w at once
   label: 'random' # one of 'random', 'eukaryotic', or 'prokaryotic'. 'random' gives a mix of eukaryotic and prokaryotic labels
 
 eval:
