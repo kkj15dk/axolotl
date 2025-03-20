@@ -332,10 +332,7 @@ class Absorbing(Graph):
         log_p = torch.log_softmax(logits, dim=-1)
         one_hot_x0 = F.one_hot(x0, num_classes=self.dim)
         neg_cross_entropy = one_hot_x0 * log_p
-        print("n2", neg_cross_entropy)
-        print(one_hot_x0)
         neg_cross_entropy = torch.where(one_hot_x0.to(dtype=torch.bool), neg_cross_entropy, 0)
-        print("n2", neg_cross_entropy)
         neg_cross_entropy = torch.sum(neg_cross_entropy, dim=-1)
 
         mask = (x == self.dim - 1).float()

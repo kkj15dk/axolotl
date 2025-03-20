@@ -41,9 +41,7 @@ def get_loss_fn(noise, graph: graph_lib.Graph, train, prediction_type='log_score
             logits = logits_fn(perturbed_batch, beta, label)
 
             alpha_t1 = noise(t=0.0, alpha=True)
-            print("alpha_t1", alpha_t1)
             dgamma_times_alpha = noise(t, dgamma_times_alpha=True)
-            print("dgamma_times_alpha", dgamma_times_alpha)
 
             loss = graph.x0_entropy(logits, alpha_t1, dgamma_times_alpha[:, None], perturbed_batch, input_ids) # loss shape: (B, j1)
         

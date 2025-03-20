@@ -263,7 +263,7 @@ def _run(rank, world_size, config):
                     dist.gather(sampling_cfg_w, cfg_w_list, dst=0)
                     
 
-                    if rank == 0 and config.wandb.use_wandb:
+                    if rank == 0:
                         gathered_sequences = list(chain(*sequences_list))
                         sampling_label = torch.cat(label_list)
                         sampling_cfg_w = torch.cat(cfg_w_list)
@@ -282,10 +282,12 @@ def _run(rank, world_size, config):
                                 
                                 file.write(f">{i} label:{sequence_label} cfg_w:{w} sampling_steps:{config.sampling.steps}\n")
                                 file.write(seq + "\n")
-                            
-                                current_table.add_data(step, i, sequence_label, w, config.sampling.steps, seq) # workaround
-                        run.log({"samples": current_table}, step=step)
-                        global_table = current_table # workaround
+
+                                if config.wandb.use_wandb:
+                                    current_table.add_data(step, i, sequence_label, w, config.sampling.steps, seq) # workaround
+                        if config.wandb.use_wandb:
+                            run.log({"samples": current_table}, step=step)
+                            global_table = current_table # workaround
 
                     if config.eval.perplexity:
                         with torch.no_grad():

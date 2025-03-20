@@ -8,6 +8,9 @@ from typing import Optional, Union
 from tqdm import tqdm
 from typing import List
 
+from .noise_lib import Scheduler
+from .graph_lib import Graph
+
 _PREDICTORS = {}
 
 
@@ -77,7 +80,7 @@ def classifier_free_guidance(score, cfg_w: torch.Tensor):
 class Predictor(abc.ABC):
     """The abstract class for a predictor algorithm."""
 
-    def __init__(self, graph, noise):
+    def __init__(self, graph: Graph, noise: Scheduler):
         super().__init__()
         self.graph = graph
         self.noise = noise
@@ -100,7 +103,7 @@ class Predictor(abc.ABC):
 @register_predictor(name="euler")
 class EulerPredictor(Predictor):
     def update_fn(self, score_fn, x, t, step_size, label, cfg_w, use_cfg=False):
-        sigma, dsigma = self.noise(t)
+        sigma, dsigma = self.noise(t, beta=True, dbeta=True)
 
         score = score_fn(x, sigma, label)
 
@@ -114,6 +117,7 @@ class EulerPredictor(Predictor):
         print(x[0])
         return x
 
+
 @register_predictor(name="none")
 class NonePredictor(Predictor):
     def update_fn(self, score_fn, x, t, step_size, label, cfg_w):
@@ -123,8 +127,8 @@ class NonePredictor(Predictor):
 @register_predictor(name="analytic")
 class AnalyticPredictor(Predictor):
     def update_fn(self, score_fn, x, t, step_size, label, cfg_w, use_cfg=False):
-        curr_sigma = self.noise(t)[0]
-        next_sigma = self.noise(t - step_size)[0]
+        curr_sigma = self.noise(t, beta=True)
+        next_sigma = self.noise(t - step_size, beta=True)
         dsigma = curr_sigma - next_sigma
 
         score = score_fn(x, curr_sigma, label)
@@ -137,14 +141,14 @@ class AnalyticPredictor(Predictor):
         probs = stag_score * self.graph.transp_transition(x, dsigma)
         return sample_categorical(probs)
 
-    
+
 class Denoiser:
     def __init__(self, graph, noise):
         self.graph = graph
         self.noise = noise
 
     def update_fn(self, score_fn, x, t, label, cfg_w, use_cfg=False):
-        sigma = self.noise(t)[0]
+        sigma = self.noise(t, beta=True)
 
         score = score_fn(x, sigma, label)
 
