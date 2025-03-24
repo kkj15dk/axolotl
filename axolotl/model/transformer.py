@@ -129,7 +129,7 @@ class LabelEmbedder(nn.Module):
 #################################################################################
 
 
-class DDiTBlock(nn.Module):
+class DiscreteDiTBlock(nn.Module):
 
     def __init__(self, dim, n_heads, cond_dim, mlp_ratio=4, dropout=0.1):
         super().__init__()
@@ -225,7 +225,7 @@ class EmbeddingLayer(nn.Module):
         return self.embedding(x)
 
 
-class DDitFinalLayer(nn.Module):
+class DiscreteDitFinalLayer(nn.Module):
     def __init__(self, hidden_size, out_channels, cond_dim):
         super().__init__()
         self.norm_final = nn.LayerNorm([hidden_size])
@@ -249,8 +249,8 @@ class DDitFinalLayer(nn.Module):
         return x
 
 
-class SEDD(nn.Module, PyTorchModelHubMixin):
-    def __init__(self, config):
+class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
+    def __init__(self, config): # TODO: don't use the config object directly, use the parameters
         super().__init__()
 
         # hack to make loading in configs easier
@@ -260,29 +260,30 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
         self.config = config
 
         self.absorb: bool = config.graph.type == "absorb"
+        self.prediction_type = config.training.prediction_type # 'log_score' or 'x0'
         self.vocab_size: int = config.tokens + (1 if self.absorb else 0)
         self.num_labels: int = config.num_labels
 
         self.vocab_embed = EmbeddingLayer(config.model.hidden_size, self.vocab_size)
         self.label_embed = LabelEmbedder(self.num_labels, config.model.cond_dim, config.model.label_dropout)
-        self.sigma_map = TimestepEmbedder(config.model.cond_dim)
+        self.t_embed = TimestepEmbedder(config.model.cond_dim)
         self.rotary_emb = rotary.Rotary(config.model.hidden_size // config.model.n_heads)
 
         self.blocks = nn.ModuleList([
-            DDiTBlock(config.model.hidden_size, config.model.n_heads, config.model.cond_dim, dropout=config.model.dropout) for _ in range(config.model.n_blocks)
+            DiscreteDiTBlock(config.model.hidden_size, config.model.n_heads, config.model.cond_dim, dropout=config.model.dropout) for _ in range(config.model.n_blocks)
         ])
 
-        self.output_layer = DDitFinalLayer(config.model.hidden_size, self.vocab_size, config.model.cond_dim)
+        self.output_layer = DiscreteDitFinalLayer(config.model.hidden_size, self.vocab_size, config.model.cond_dim)
         self.scale_by_sigma = config.model.scale_by_sigma
 
 
-    def forward(self, indices, sigma, label):
+    def forward(self, indices, t, label):
 
         x = self.vocab_embed(indices)
 
-        sigma_embed = self.sigma_map(sigma)
+        time_embed = self.t_embed(t)
         label_embed = self.label_embed(label)
-        c = F.silu(sigma_embed + label_embed)
+        c = F.silu(time_embed + label_embed)
 
         rotary_cos_sin = self.rotary_emb(x)
 
@@ -292,19 +293,16 @@ class SEDD(nn.Module, PyTorchModelHubMixin):
 
             x = self.output_layer(x, c)
 
+        if self.prediction_type == 'log_score':
 
-        if self.scale_by_sigma:
-            # assert self.absorb, "Haven't configured this to work." # TODO: is this because of absorb, or geometric noise schedule?
-            esigm1_log = torch.where(sigma < 0.5, torch.expm1(sigma), sigma.exp() - 1).log().to(x.dtype)[:, None, None]
-            x = x - esigm1_log - np.log(x.shape[-1] - 1) # this will be approximately averaged at 0
-        
+            
 
-        if x.is_nested:
-            x, offsets = packed_tensor_from_jagged(x)
-            indices, _ = packed_tensor_from_jagged(indices)
-            x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
-            x = jagged_from_packed_tensor(x, offsets)
-        else:
-            x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
+            if x.is_nested:
+                x, offsets = packed_tensor_from_jagged(x)
+                indices, _ = packed_tensor_from_jagged(indices)
+                x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
+                x = jagged_from_packed_tensor(x, offsets)
+            else:
+                x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
 
         return x
