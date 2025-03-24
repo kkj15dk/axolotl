@@ -21,14 +21,16 @@ def get_loss_fn(noise, graph: graph_lib.Graph, train, prediction_type='log_score
         elif t_sampling == 'antithetic':
             t0 = torch.rand((1,), device=input_ids.device).item()
             t = torch.remainder(t0 + torch.arange(start=0, end=1, step=1/bs, device=input_ids.device), 1)
-        beta, dbeta = noise(t, beta=True, dbeta=True)
+        alpha = noise(t, alpha=True)
         
-        perturbed_batch = graph.sample_transition(input_ids, beta[:, None])
+        perturbed_batch = graph.sample_transition(input_ids, alpha[:, None])
 
         if prediction_type == 'log_score':
+            dbeta = noise(t, dbeta=True)
+
             log_score_fn = mutils.get_output_fn(model, train=train, exponentiate=False)
-            log_score = log_score_fn(perturbed_batch, beta, label)
-            loss = graph.score_entropy(log_score, beta[:, None], perturbed_batch, input_ids) # loss shape: (B, j1)
+            log_score = log_score_fn(perturbed_batch, t, label)
+            loss = graph.score_entropy(log_score, t[:, None], perturbed_batch, input_ids) # loss shape: (B, j1)
 
             if log_score.is_nested:
                 loss = (dbeta[:, None] * loss)
@@ -37,11 +39,11 @@ def get_loss_fn(noise, graph: graph_lib.Graph, train, prediction_type='log_score
                 loss = (dbeta[:, None] * loss).sum(dim=-1)
 
         elif prediction_type == 'x0':
-            logits_fn = mutils.get_output_fn(model, train=train, exponentiate=False)
-            logits = logits_fn(perturbed_batch, beta, label)
-
             alpha_t1 = noise(t=0.0, alpha=True)
             dgamma_times_alpha = noise(t, dgamma_times_alpha=True)
+
+            logits_fn = mutils.get_output_fn(model, train=train, exponentiate=False)
+            logits = logits_fn(perturbed_batch, t, label)
 
             loss = graph.x0_entropy(logits, alpha_t1, dgamma_times_alpha[:, None], perturbed_batch, input_ids) # loss shape: (B, j1)
         

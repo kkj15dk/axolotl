@@ -31,6 +31,10 @@ class Graph(abc.ABC):
         pass
 
     @property
+    def vocab_size(self):
+        pass
+
+    @property
     def absorb(self):
         """
         Whether input {dim - 1} is an absorbing state (used for denoising to always remove the mask).
@@ -59,19 +63,27 @@ class Graph(abc.ABC):
 
 
     @abc.abstractmethod
-    def transition(self, i, sigma):
+    def transition(self, i, alpha):
         """
-        Computes the i-th column of the transition matrix e^{sigma Q}.
+        Computes the i-th column of the transition matrix e^{beta Q}.
         """
         pass
 
 
-    def sample_transition(self, i, sigma):
+    @abc.abstractmethod
+    def transp_transition(self, i, alpha):
+        """
+        Computes the i-th row of the transposed ransition matrix.
+        """ # TODO: i think?
+        pass
+
+
+    def sample_transition(self, i, alpha):
         """
         Samples the transition vector.
         """
-        assert sigma is not None
-        transition_vector = self.transition(i, sigma)
+        assert alpha is not None
+        transition_vector = self.transition(i, alpha)
         return sample_categorical(transition_vector, method="hard")
     
 
@@ -126,11 +138,15 @@ class Uniform(Graph):
     Everything goes to everything else. Normalized down by dimension to avoid blowup.
     """
     def __init__(self, dim):
-        self.vocab_size = dim
+        self._vocab_size = dim
+
+    @property
+    def vocab_size(self):
+        return self._vocab_size
 
     @property
     def dim(self):
-        return self.vocab_size
+        return self._vocab_size
     
     @property
     def absorb(self):
@@ -216,11 +232,15 @@ class Uniform(Graph):
 class Absorbing(Graph):
     def __init__(self, dim):
         super().__init__()
-        self.vocab_size = dim
+        self._vocab_size = dim # vocab size without absorbing state
 
     @property
+    def vocab_size(self):
+        return self._vocab_size
+    
+    @property
     def dim(self):
-        return self.vocab_size + 1
+        return self._vocab_size + 1
     
     @property
     def absorb(self):
@@ -236,8 +256,8 @@ class Absorbing(Graph):
         edge[i == self.dim - 1] += 1
         return edge
 
-    def transition(self, i, sigma):
-        pass
+    def transition(self, i, alpha):
+        raise NotImplementedError("Absorbing graph does not have support for transition")
     
     def transp_transition(self, i, alpha):
         alpha = unsqueeze_as(alpha, i[..., None])

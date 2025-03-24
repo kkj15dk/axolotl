@@ -11,6 +11,8 @@ from typing import List
 from .noise_lib import Scheduler
 from .graph_lib import Graph
 
+from wandb import Table
+
 _PREDICTORS = {}
 
 
@@ -38,25 +40,41 @@ def get_predictor(name):
     return _PREDICTORS[name]
 
 
-def write_samples(output: str, sequences: List[str], sampling_label: List[str], sampling_cfg_w: torch.FloatTensor, steps: int, name: str = "sample"):
+def write_samples(output: str, 
+                  sequences: List[str], 
+                  sampling_label: torch.LongTensor, 
+                  sampling_cfg_w: torch.FloatTensor, 
+                  steps: int, 
+                  name: str = "sample",
+                  use_wandb: bool = False,
+                  current_table: Optional[Table] = None,
+                  mode: str = 'a'
+):
     """Write samples to a file."""
     
     assert sampling_cfg_w.dim() == 1, f"cfg_w must be a 1D tensor, got {sampling_cfg_w.dim()}"
     assert len(sequences) == len(sampling_label) == len(sampling_cfg_w), f"Length mismatch: {len(sequences)}, {len(sampling_label)}, {len(sampling_cfg_w)}"
+    if use_wandb:
+        assert current_table is not None, "current_table must be provided if use_wandb is True"
 
     print(f"Writing samples to {output}")
-    with open(output, "a") as file:
+    with open(output, mode) as file:
         for i, seq in enumerate(sequences):
             if sampling_label[i] == 0:
                 sequence_label = "prokaryotic"
             elif sampling_label[i] == 1:
                 sequence_label = "eukaryotic"
+            elif sampling_label[i] == 2:
+                sequence_label = "none"
             else:
                 raise ValueError(f"Invalid label: {sampling_label[i]}")
             w = sampling_cfg_w[i].item()
             
             file.write(f">{name}_{i} label:{sequence_label} cfg_w:{w} steps:{steps}\n")
             file.write(seq + "\n")
+
+            if use_wandb:
+                current_table.add_data(steps, i, sequence_label, w, steps, seq) # workaround
 
 
 def classifier_free_guidance(score, cfg_w: torch.Tensor):
@@ -100,7 +118,13 @@ class Predictor(abc.ABC):
         pass
 
 
-@register_predictor(name="euler")
+@register_predictor(name="none")
+class NonePredictor(Predictor):
+    def update_fn(self, score_fn, x, t, step_size, label, cfg_w):
+        return x
+
+
+@register_predictor(name="euler_score")
 class EulerPredictor(Predictor):
     def update_fn(self, score_fn, x, t, step_size, label, cfg_w, use_cfg=False):
         sigma, dsigma = self.noise(t, beta=True, dbeta=True)
@@ -116,20 +140,14 @@ class EulerPredictor(Predictor):
         return x
 
 
-@register_predictor(name="none")
-class NonePredictor(Predictor):
-    def update_fn(self, score_fn, x, t, step_size, label, cfg_w):
-        return x
-
-
-@register_predictor(name="analytic")
+@register_predictor(name="analytic_score")
 class AnalyticPredictor(Predictor):
     def update_fn(self, score_fn, x, t, step_size, label, cfg_w, use_cfg=False):
-        curr_sigma = self.noise(t, beta=True)
-        next_sigma = self.noise(t - step_size, beta=True)
-        dsigma = curr_sigma - next_sigma
+        curr_beta = self.noise(t, beta=True)
+        next_beta = self.noise(t - step_size, beta=True)
+        dsigma = curr_beta - next_beta
 
-        score = score_fn(x, curr_sigma, label)
+        score = score_fn(x, t, label)
 
         if use_cfg:
             score = classifier_free_guidance(score, cfg_w)
@@ -146,21 +164,43 @@ class Denoiser:
         self.noise = noise
 
     def update_fn(self, score_fn, x, t, label, cfg_w, use_cfg=False):
-        sigma = self.noise(t, beta=True)
+        beta, alpha = self.noise(t, beta=True, alpha=True)
 
-        score = score_fn(x, sigma, label)
+        score = score_fn(x, t, label)
 
         if use_cfg:
             score = classifier_free_guidance(score, cfg_w)
 
-        sigma = sigma.unsqueeze(-1) # TODO: make it so this is not necessary
-        stag_score = self.graph.staggered_score(score, sigma)
-        probs = stag_score * self.graph.transp_transition(x, sigma)
+        alpha = alpha.unsqueeze(-1) # TODO: make it so this is not necessary
+        beta = beta.unsqueeze(-1) # TODO: make it so this is not necessary
+        stag_score = self.graph.staggered_score(score, beta) # beta = dbeta for the last step
+        probs = stag_score * self.graph.transp_transition(x, alpha)
         # truncate probabilities
         if self.graph.absorb:
             probs = probs[..., :-1]
         
         #return probs.argmax(dim=-1)
+        return sample_categorical(probs)
+
+
+@register_predictor(name="ancestral_x0")
+class AncestralPredictor(Predictor):
+    def update_fn(self, x0_fn, x, t, step_size, label, cfg_w, use_cfg=False):
+        alpha_t = self.noise(t, alpha=True)
+        alpha_s = self.noise(t - step_size, alpha=True)
+
+        x0_prediction = x0_fn(x, t, label)
+
+        if use_cfg:
+            x0_prediction = classifier_free_guidance(x0_prediction, cfg_w)
+
+        dsigma = dsigma.unsqueeze(-1) # TODO: make it so this is not necessary
+        stag_score = self.graph.staggered_score(x0_prediction, dsigma)
+        probs = stag_score * self.graph.transp_transition(x, dsigma)
+
+        if self.graph.absorb:
+            probs = ( (alpha_s - alpha_t) / (1 - alpha_t) ) * probs + ( (1 - alpha_s) / (1 - alpha_t) ) * F.one_hot(torch.tensor(self.graph.vocab_size, device=x.device), num_classes=x.shape[-1])
+
         return sample_categorical(probs)
 
 

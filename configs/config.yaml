@@ -17,7 +17,7 @@ num_labels: 2 # prokaryotic (0), eukaryotic (1)
 # medium => batch_size=8
 
 training:
-  batch_size: 4
+  batch_size: 8
   drop_last: True
   num_workers: 4 # number of workers for each dataloader
   accum: 1
@@ -30,7 +30,7 @@ training:
   snapshot_sampling: True
   snapshot_checkpoint: False
   ema: 0.9999
-  prediction_type: 'x0' # 'log_score' or 'x0'
+  prediction_type: 'log_score' # 'log_score' or 'x0'
   t_sampling: 'uniform' # 'antithetic' or 'uniform'
 
 data:
@@ -62,7 +62,7 @@ noise:
 sampling:
   predictor: euler
   steps: 64
-  length: 256
+  length: 128
   noise_removal: True
   cfg: 0 # cfg_w = 0 => unconditional. cfg_w = 1 => conditional. 0 < cfg_w < 1 => interpolation. cfg_w > 1 => extrapolation. cfg_w = 'testing' => testing different cfg_w at once
   label: 'random' # one of 'random', 'eukaryotic', or 'prokaryotic'. 'random' gives a mix of eukaryotic and prokaryotic labels
@@ -70,7 +70,7 @@ sampling:
 eval:
   batch_size: 8
   perplexity: True
-  perplexity_batch_size: 2
+  perplexity_batch_size: 8
 
 optim:
   weight_decay: 0
@@ -83,7 +83,7 @@ optim:
   grad_clip: 1.
 
 wandb:
-  use_wandb: False
+  use_wandb: True
   entity: kkj15dk-axolotl
   project: axolotl
 

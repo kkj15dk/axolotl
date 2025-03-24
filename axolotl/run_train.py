@@ -116,15 +116,15 @@ def _run(rank, world_size, config):
     graph = graph_lib.get_graph(config, device)
     
     # build score model
-    score_model = SEDD(config).to(device)
-    score_model = DDP(score_model, device_ids=[rank], static_graph=True) #, find_unused_parameters=True)
+    model = SEDD(config).to(device)
+    model = DDP(model, device_ids=[rank], static_graph=True) #, find_unused_parameters=True)
 
-    num_parameters = sum(p.numel() for p in score_model.parameters())
+    num_parameters = sum(p.numel() for p in model.parameters())
     mprint(f"Number of parameters in the model: {num_parameters}")
 
     ema = ExponentialMovingAverage(
-        score_model.parameters(), decay=config.training.ema)
-    mprint(score_model)
+        model.parameters(), decay=config.training.ema)
+    mprint(model)
     mprint(f"EMA: {ema}")
 
     # build noise
@@ -134,11 +134,11 @@ def _run(rank, world_size, config):
 
 
     # build optimization state
-    optimizer = losses.get_optimizer(config, chain(score_model.parameters(), noise.parameters()))
+    optimizer = losses.get_optimizer(config, chain(model.parameters(), noise.parameters()))
     mprint(f"Optimizer: {optimizer}")
     scaler = torch.amp.GradScaler('cuda')
     mprint(f"Scaler: {scaler}")
-    state = dict(optimizer=optimizer, scaler=scaler, model=score_model, noise=noise, ema=ema, step=0) 
+    state = dict(optimizer=optimizer, scaler=scaler, model=model, noise=noise, ema=ema, step=0) 
 
 
     # load in state
@@ -241,10 +241,10 @@ def _run(rank, world_size, config):
                     this_sample_dir = os.path.join(sample_dir, "iter_{}".format(step))
                     utils.makedirs(this_sample_dir)
 
-                    ema.store(score_model.parameters())
-                    ema.copy_to(score_model.parameters())
-                    sample, sampling_label, sampling_cfg_w = sampling_fn(score_model)
-                    ema.restore(score_model.parameters())
+                    ema.store(model.parameters())
+                    ema.copy_to(model.parameters())
+                    sample, sampling_label, sampling_cfg_w = sampling_fn(model)
+                    ema.restore(model.parameters())
 
                     sequences = tokenizer.batch_decode(sample)
                     
@@ -268,23 +268,13 @@ def _run(rank, world_size, config):
                         sampling_label = torch.cat(label_list)
                         sampling_cfg_w = torch.cat(cfg_w_list)
                         current_table = wandb.Table(columns=global_table.columns, data=global_table.data) # workaround
+                        steps = config.sampling.steps
 
                         file_name = os.path.join(this_sample_dir, f"samples.txt")
-                        with open(file_name, 'w') as file:
-                            for i, seq in enumerate(gathered_sequences):
-                                if sampling_label[i] == 0:
-                                    sequence_label = "prokaryotic"
-                                elif sampling_label[i] == 1:
-                                    sequence_label = "eukaryotic"
-                                else:
-                                    raise ValueError(f"Invalid label: {sampling_label[i]}")
-                                w = sampling_cfg_w[i].item()
-                                
-                                file.write(f">{i} label:{sequence_label} cfg_w:{w} sampling_steps:{config.sampling.steps}\n")
-                                file.write(seq + "\n")
+                        
+                        sampling.write_samples(file_name, gathered_sequences, sampling_label, sampling_cfg_w, steps, name='sample', use_wandb=config.wandb.use_wandb, current_table=current_table)
+                        mprint(f"Samples saved at step: {step}.")
 
-                                if config.wandb.use_wandb:
-                                    current_table.add_data(step, i, sequence_label, w, config.sampling.steps, seq) # workaround
                         if config.wandb.use_wandb:
                             run.log({"samples": current_table}, step=step)
                             global_table = current_table # workaround
