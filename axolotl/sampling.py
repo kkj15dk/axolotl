@@ -160,49 +160,54 @@ class AnalyticPredictor(Predictor):
         return sample_categorical(probs)
 
 
-class Denoiser:
-    def __init__(self, graph, noise):
-        self.graph = graph
-        self.noise = noise
-
-    def update_fn(self, score_fn, x, t, label, cfg_w, use_cfg=False):
-        beta, alpha = self.noise(t, beta=True, alpha=True)
-
-        score = score_fn(x, t, label)
-
-        if use_cfg:
-            score = classifier_free_guidance(score, cfg_w)
-
-        alpha = alpha.unsqueeze(-1) # TODO: make it so this is not necessary
-        beta = beta.unsqueeze(-1) # TODO: make it so this is not necessary
-        stag_score = self.graph.staggered_score(score, beta) # beta = dbeta for the last step
-        probs = stag_score * self.graph.transp_transition(x, alpha)
-        # truncate probabilities
-        if self.graph.absorb:
-            probs = probs[..., :-1]
-        
-        #return probs.argmax(dim=-1)
-        return sample_categorical(probs)
-
-
 @register_predictor(name="ancestral_x0")
 class AncestralPredictor(Predictor):
     def update_fn(self, x0_fn, x, t, step_size, label, cfg_w, use_cfg=False):
         alpha_t = self.noise(t, alpha=True)
         alpha_s = self.noise(t - step_size, alpha=True)
+        unmask_prob = (alpha_s - alpha_t) / (1 - alpha_t)
 
         x0_prediction = x0_fn(x, t, label)
 
         if use_cfg:
             x0_prediction = classifier_free_guidance(x0_prediction, cfg_w)
 
-        dsigma = dsigma.unsqueeze(-1) # TODO: make it so this is not necessary
-        stag_score = self.graph.staggered_score(x0_prediction, dsigma)
-        probs = stag_score * self.graph.transp_transition(x, dsigma)
-
         if self.graph.absorb:
-            probs = ( (alpha_s - alpha_t) / (1 - alpha_t) ) * probs + ( (1 - alpha_s) / (1 - alpha_t) ) * F.one_hot(torch.tensor(self.graph.vocab_size, device=x.device), num_classes=x.shape[-1])
+            probs = unmask_prob * x0_prediction + (1 -  unmask_prob) * F.one_hot(self.graph.vocab_size * torch.ones_like(x.shape[:-1]), num_classes=self.graph.dim)
+        else:
+            raise NotImplementedError("Not implemented yet")
 
+        return sample_categorical(probs)
+
+
+class Denoiser:
+    def __init__(self, graph, noise, prediction_type):
+        self.graph: Graph = graph
+        self.noise = noise
+        self.prediction_type = prediction_type
+
+    def update_fn(self, output_fn, x, t, label, cfg_w, use_cfg=False):
+        beta, alpha = self.noise(t, beta=True, alpha=True)
+
+        output = output_fn(x, t, label)
+
+        if use_cfg:
+            output = classifier_free_guidance(output, cfg_w)
+
+        if self.prediction_type == 'log_score':
+            beta = beta.unsqueeze(-1) # TODO: make it so this is not necessary
+            stag_score = self.graph.staggered_score(output, beta) # beta = dbeta for the last step
+            probs = stag_score * self.graph.transp_transition(x, beta)
+        elif self.prediction_type == 'x0':
+            probs = output
+        else:
+            raise ValueError(f"Invalid prediction type: {self.prediction_type}")
+
+        # truncate probabilities
+        if self.graph.absorb:
+            probs = probs[..., :-1]
+        
+        #return probs.argmax(dim=-1)
         return sample_categorical(probs)
 
 
@@ -219,6 +224,8 @@ def get_sampling_fn(config, graph, noise, batch_dims, eps, device):
                                  cfg=config.sampling.cfg,
                                  label=config.sampling.label,
                                  num_labels=config.num_labels,
+                                 use_tqdm=False,
+                                 prediction_type=config.prediction_type
     )
     
     return sampling_fn
@@ -236,15 +243,25 @@ def get_pc_sampler(graph,
                    cfg: Union[float, List[float], str]=1.0, 
                    label: str=None, 
                    num_labels: int=2,
-                   use_tqdm: bool=False
+                   use_tqdm: bool=False,
+                   prediction_type: str=None,
+                   print_intermediates: bool=True,
 ):
+    if prediction_type == 'x0':
+        assert predictor == 'ancestral_x0', "Prediction type x0 requires the predictor to be ancestral_x0"
+    elif prediction_type == 'log_score':
+        assert predictor in ['euler_score', 'analytic_score'], "Prediction type log_score requires the predictor to be euler_score or analytic_score"
+    else:
+        raise ValueError(f"Invalid prediction type: {prediction_type}")
+    
     predictor = get_predictor(predictor)(graph, noise)
     projector = proj_fun
-    denoiser = Denoiser(graph, noise)
+    denoiser = Denoiser(graph, noise, prediction_type)
 
     @torch.no_grad()
     def pc_sampler(model):
         batch_size = batch_dims[0]
+
         if label == 'prokaryotic': # prokaryotic = 0
             input_label = torch.zeros(batch_size, device=device, dtype=torch.long)
         elif label == 'eukaryotic': # eukaryotic = 1
@@ -255,14 +272,14 @@ def get_pc_sampler(graph,
             raise ValueError(f"Invalid label: {label}")
         
         cfg_w = cfg # cfg weight
-
         if cfg_w == 0: # unconditional sampling
             input_label = num_labels * torch.ones(batch_size, device=device, dtype=torch.long)
-            use_cfg = False
+            use_cfg = False # No need for interpolation at cfg_w = 0
             cfg_w = torch.zeros(batch_size, device=device)
         elif cfg_w == 1: # conditional sampling
-            use_cfg = False # Now need for interpolation at cfg_w = 1
+            use_cfg = False # No need for interpolation at cfg_w = 1
             cfg_w = torch.ones(batch_size, device=device)
+
         else: # We are interpolating or extrapolating
             use_cfg = True
             if cfg_w == 'testing':
@@ -282,8 +299,13 @@ def get_pc_sampler(graph,
                     assert isinstance(cfg_w, float), f'cfg weight must be a float, a list of floats, or "testing", got {cfg_w}'
                     cfg_w = cfg_w * torch.ones(batch_size, device=device)
 
-
-        sampling_score_fn = mutils.get_output_fn(model, train=False, exponentiate=True, use_cfg=use_cfg, num_labels=num_labels)
+        if prediction_type == 'x0':
+            sampling_output_fn = mutils.get_output_fn(model, train=False, exponentiate=False, use_cfg=use_cfg, num_labels=num_labels)
+        elif prediction_type == 'log_score':
+            sampling_output_fn = mutils.get_output_fn(model, train=False, exponentiate=True, use_cfg=use_cfg, num_labels=num_labels)
+        else:
+            raise ValueError(f"Invalid prediction type: {prediction_type}")
+        
         x = graph.sample_limit(*batch_dims).to(device)
         timesteps = torch.linspace(1, eps, steps + 1, device=device)
         dt = (1 - eps) / steps
@@ -291,14 +313,18 @@ def get_pc_sampler(graph,
         for i in tqdm(range(steps), desc='Sampling', disable=not use_tqdm):
             t = timesteps[i] * torch.ones(x.shape[0], device=device)
             x = projector(x)
-            x = predictor.update_fn(sampling_score_fn, x, t, dt, input_label, cfg_w, use_cfg)
+            x = predictor.update_fn(sampling_output_fn, x, t, dt, input_label, cfg_w, use_cfg)
+            if print_intermediates:
+                print(x.argmax(dim=-1))
 
 
         if denoise:
             # denoising step
             x = projector(x)
             t = timesteps[-1] * torch.ones(x.shape[0], device=device)
-            x = denoiser.update_fn(sampling_score_fn, x, t, input_label, cfg_w, use_cfg)
+            x = denoiser.update_fn(sampling_output_fn, x, t, input_label, cfg_w, use_cfg)
+            if print_intermediates:
+                print(x.argmax(dim=-1))
             
         return x, input_label, cfg_w
     

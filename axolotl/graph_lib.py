@@ -63,27 +63,23 @@ class Graph(abc.ABC):
 
 
     @abc.abstractmethod
-    def transition(self, i, alpha):
+    def transition(self, i, sigma):
         """
-        Computes the i-th column of the transition matrix e^{beta Q}.
+        Computes the i-th column of the transition matrix e^{sigma Q}.
         """
         pass
 
 
     @abc.abstractmethod
-    def transp_transition(self, i, alpha):
-        """
-        Computes the i-th row of the transposed ransition matrix.
-        """ # TODO: i think?
+    def transp_transition(self, i, sigma):
         pass
+    
 
-
-    def sample_transition(self, i, alpha):
+    def sample_transition(self, i, sigma):
         """
         Samples the transition vector.
         """
-        assert alpha is not None
-        transition_vector = self.transition(i, alpha)
+        transition_vector = self.transition(i, sigma)
         return sample_categorical(transition_vector, method="hard")
     
 
@@ -119,7 +115,7 @@ class Graph(abc.ABC):
 
 
     @abc.abstractmethod
-    def score_entropy(self, score, sigma, x, x0):
+    def score_entropy(self, log_score, beta, x, x0):
         """
         Computes the score entropy function (with requisite constant normalization)
         """
@@ -160,26 +156,24 @@ class Uniform(Graph):
     def transp_rate(self, i):
         return self.rate(i)
 
-    def transition(self, i, alpha):
-        trans = torch.ones(*i.shape, self.dim, device=i.device) * (1 - alpha[..., None]) / self.dim
+    def transition(self, i, sigma):
+        trans = torch.ones(*i.shape, self.dim, device=i.device) * (1 - (-sigma[..., None]).exp()) / self.dim
         trans = trans.scatter(-1, i[..., None], torch.zeros_like(trans))
         trans = trans.scatter(-1, i[..., None], 1 - trans.sum(dim=-1, keepdim=True))
         return trans
     
-    def transp_transition(self, i, alpha):
-        return self.transition(i, alpha)
+    def transp_transition(self, i, sigma):
+        return self.transition(i, sigma)
 
-    def sample_transition(self, i, alpha):
-
-        move_chance = 1 - alpha
-
-        move_indices = torch.rand_like(i.float(), device=i.device) < move_chance
+    def sample_transition(self, i, sigma):
+        move_chance = 1 - (-sigma).exp()
+        move_indices = torch.rand(*i.shape, device=i.device) < move_chance
         i_pert = torch.where(move_indices, torch.randint_like(i, self.dim), i)
         return i_pert
 
-    def staggered_score(self, score, dbeta):
+    def staggered_score(self, score, dsigma):
         dim = score.shape[-1]
-        epow = (-dbeta).exp()[..., None]
+        epow = (-dsigma).exp()[..., None]
         return ((epow - 1) / (dim * epow)) * score.sum(dim=-1, keepdim=True) + score / epow
 
     def sample_limit(self, *batch_dims):
@@ -256,32 +250,29 @@ class Absorbing(Graph):
         edge[i == self.dim - 1] += 1
         return edge
 
-    def transition(self, i, alpha):
-        raise NotImplementedError("Absorbing graph does not have support for transition")
+    def transition(self, i, sigma):
+        pass
     
-    def transp_transition(self, i, alpha):
-        alpha = unsqueeze_as(alpha, i[..., None])
-        edge = alpha * F.one_hot(i, num_classes=self.dim)
+    def transp_transition(self, i, sigma):
+        sigma = unsqueeze_as(sigma, i[..., None])
+        edge = (-sigma).exp() * F.one_hot(i, num_classes=self.dim)
         edge += torch.where(
             i == self.dim - 1,
-            1 - alpha.squeeze(-1),
+            1 - (-sigma).squeeze(-1).exp(),
             0
         )[..., None]
         return edge
 
-    def sample_transition(self, i, alpha):
-        
-        move_chance = 1 - alpha
-
-        move_indices = torch.rand_like(i.float(), device=i.device) < move_chance
+    def sample_transition(self, i, sigma):
+        move_chance = 1 - (-sigma).exp()
+        move_indices = torch.rand(*i.shape, device=i.device) < move_chance
         i_pert = torch.where(move_indices, self.dim - 1, i)
-            
         return i_pert
     
-    def staggered_score(self, score, dbeta):
+    def staggered_score(self, score, dsigma):
         score = score.clone() # yeah yeah whatever we should probably do this
-        extra_const = (1 - (dbeta).exp()) * score.sum(dim=-1)
-        score *= dbeta.exp()[:, None]
+        extra_const = (1 - (dsigma).exp()) * score.sum(dim=-1)
+        score *= dsigma.exp()[:, None]
         score[..., -1] += extra_const
         return score
 
