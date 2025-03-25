@@ -6,6 +6,7 @@ defaults:
 ngpus: 1
 tokens: 23 # 23 for uniform
 num_labels: 2 # prokaryotic (0), eukaryotic (1)
+prediction_type: 'x0' # 'log_score' or 'x0'
 
 # length: 4096
 # A100 40GB
@@ -30,7 +31,6 @@ training:
   snapshot_sampling: True
   snapshot_checkpoint: False
   ema: 0.9999
-  prediction_type: 'log_score' # 'log_score' or 'x0'
   t_sampling: 'uniform' # 'antithetic' or 'uniform'
 
 data:
@@ -60,7 +60,7 @@ noise:
   sigma_max: 20
 
 sampling:
-  predictor: euler
+  predictor: ancestral_x0 # 'euler_score', 'analytic_score, or 'ancestral_x0' 
   steps: 64
   length: 128
   noise_removal: True
@@ -83,7 +83,7 @@ optim:
   grad_clip: 1.
 
 wandb:
-  use_wandb: True
+  use_wandb: False
   entity: kkj15dk-axolotl
   project: axolotl
 

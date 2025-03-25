@@ -19,7 +19,7 @@ from . import (
     noise_lib,
     utils
 )
-from .model.transformer import SEDD
+from .model.transformer import DiscreteDiT
 from .model.ema import ExponentialMovingAverage
 
 from transformers import PreTrainedTokenizerFast
@@ -116,7 +116,7 @@ def _run(rank, world_size, config):
     graph = graph_lib.get_graph(config, device)
     
     # build score model
-    model = SEDD(config).to(device)
+    model = DiscreteDiT(config).to(device)
     model = DDP(model, device_ids=[rank], static_graph=True) #, find_unused_parameters=True)
 
     num_parameters = sum(p.numel() for p in model.parameters())
@@ -179,8 +179,8 @@ def _run(rank, world_size, config):
 
     # Build one-step training and evaluation functions
     optimize_fn = losses.optimization_manager(config)
-    train_step_fn = losses.get_step_fn(noise, graph, True, optimize_fn, config.training.accum, config.training.prediction_type, config.training.t_sampling)
-    eval_step_fn = losses.get_step_fn(noise, graph, False, optimize_fn, config.training.accum, config.training.prediction_type, config.training.t_sampling)
+    train_step_fn = losses.get_step_fn(noise, graph, True, optimize_fn, config.training.accum, config.prediction_type, config.training.t_sampling)
+    eval_step_fn = losses.get_step_fn(noise, graph, False, optimize_fn, config.training.accum, config.prediction_type, config.training.t_sampling)
 
 
     if config.training.snapshot_sampling:
