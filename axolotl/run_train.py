@@ -267,7 +267,10 @@ def _run(rank, world_size, config):
                         gathered_sequences = list(chain(*sequences_list))
                         sampling_label = torch.cat(label_list)
                         sampling_cfg_w = torch.cat(cfg_w_list)
-                        current_table = wandb.Table(columns=global_table.columns, data=global_table.data) # workaround
+                        if config.wandb.use_wandb:
+                            current_table = wandb.Table(columns=global_table.columns, data=global_table.data) # workaround
+                        else:
+                            current_table = None
                         steps = config.sampling.steps
 
                         file_name = os.path.join(this_sample_dir, f"samples.txt")

@@ -346,7 +346,7 @@ class Absorbing(Graph):
         neg_cross_entropy = torch.where(one_hot_x0.to(dtype=torch.bool), neg_cross_entropy, 0)
         neg_cross_entropy = torch.sum(neg_cross_entropy, dim=-1)
 
-        mask = (x == self.dim - 1).float()
+        mask = (x == self.vocab_size).float()
         neg_cross_entropy = -dgamma_times_alpha * neg_cross_entropy * mask
 
         if offsets is not None:
