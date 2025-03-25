@@ -167,7 +167,7 @@ class Uniform(Graph):
 
     def sample_transition(self, i, sigma):
         move_chance = 1 - (-sigma).exp()
-        move_indices = torch.rand(*i.shape, device=i.device) < move_chance
+        move_indices = torch.rand_like(i.float(), device=i.device) < move_chance
         i_pert = torch.where(move_indices, torch.randint_like(i, self.dim), i)
         return i_pert
 
@@ -265,7 +265,7 @@ class Absorbing(Graph):
 
     def sample_transition(self, i, sigma):
         move_chance = 1 - (-sigma).exp()
-        move_indices = torch.rand(*i.shape, device=i.device) < move_chance
+        move_indices = torch.rand_like(i.float(), device=i.device) < move_chance
         i_pert = torch.where(move_indices, self.dim - 1, i)
         return i_pert
     
