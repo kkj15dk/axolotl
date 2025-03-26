@@ -58,13 +58,13 @@ graph:
 
 noise:
   type: linear # SEDD noise: 'loglinear', or 'geometric'. MD4 noise: 'linear', or 'cosine'.
-  eps: 1e-4
+  eps: 1e-3
   sigma_min: 1e-4
   sigma_max: 20
 
 sampling:
   predictor: euler_score # 'euler_score', 'analytic_score, or 'ancestral_x0' 
-  steps: 64
+  steps: 16
   length: 128
   noise_removal: True
   cfg: 0 # cfg_w = 0 => unconditional. cfg_w = 1 => conditional. 0 < cfg_w < 1 => interpolation. cfg_w > 1 => extrapolation. cfg_w = 'testing' => testing different cfg_w at once

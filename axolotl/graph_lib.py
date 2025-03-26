@@ -91,9 +91,12 @@ class Graph(abc.ABC):
 
         normalized_rate.scatter_(-1, i[..., None], torch.zeros_like(normalized_rate))
         normalized_rate.scatter_(-1, i[..., None], -normalized_rate.sum(dim=-1, keepdim=True))
+        print("normalized_rate", normalized_rate[0])
         return normalized_rate
 
+
     def sample_rate(self, i, rate):
+        print("sample rate probs", F.one_hot(i, num_classes=self.dim).to(rate) + rate)
         return sample_categorical(F.one_hot(i, num_classes=self.dim).to(rate) + rate)
 
     
@@ -338,16 +341,15 @@ class Absorbing(Graph):
         else:
             dgamma_times_alpha = dgamma_times_alpha.expand_as(x)
             offsets = None
-
+        
         # MD4 implementation, translated from jax
         log_p = torch.log_softmax(logits, dim=-1)
         one_hot_x0 = F.one_hot(x0, num_classes=self.dim)
-        neg_cross_entropy = one_hot_x0 * log_p
-        neg_cross_entropy = torch.where(one_hot_x0.to(dtype=torch.bool), neg_cross_entropy, 0)
+        neg_cross_entropy = torch.where(one_hot_x0.to(dtype=torch.bool), log_p, 0) # to avoid nans when with -inf * 0
         neg_cross_entropy = torch.sum(neg_cross_entropy, dim=-1)
 
         mask = (x == self.vocab_size).float()
-        neg_cross_entropy = -dgamma_times_alpha * neg_cross_entropy * mask
+        neg_cross_entropy = torch.where(mask.to(dtype=torch.bool), -dgamma_times_alpha * neg_cross_entropy, 0) # to avoid nans when with -inf * 0
 
         if offsets is not None:
             neg_cross_entropy = jagged_from_packed_tensor(neg_cross_entropy, offsets) # (B, j1)
