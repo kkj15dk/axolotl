@@ -88,6 +88,7 @@ class Graph(abc.ABC):
         Constructs the reverse rate. Which is score * transp_rate
         """
         normalized_rate = self.transp_rate(i) * score
+        print("transp_rate", self.transp_rate(i)[0])
 
         normalized_rate.scatter_(-1, i[..., None], torch.zeros_like(normalized_rate))
         normalized_rate.scatter_(-1, i[..., None], -normalized_rate.sum(dim=-1, keepdim=True))

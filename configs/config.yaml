@@ -24,8 +24,7 @@ training:
   num_workers: 4 # number of workers for each dataloader
   accum: 1
   n_iters: 1300001
-  snapshot_freq: 200
-  snapshot_freq: 200
+  snapshot_freq: 100
   log_freq: 50
   eval_freq: 100
   snapshot_freq_for_preemption: 1000
