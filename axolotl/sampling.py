@@ -127,15 +127,18 @@ class NonePredictor(Predictor):
 @register_predictor(name="euler_score")
 class EulerPredictor(Predictor):
     def update_fn(self, score_fn, x, t, step_size, label, cfg_w, use_cfg=False):
-        sigma, dsigma = self.noise(t, beta=True, dbeta=True)
+        dsigma = self.noise(t, dbeta=True)
+        print("dsigma", dsigma)
 
-        score = score_fn(x, sigma, label)
+        score = score_fn(x, t, label)
+        print("score", score)
 
         if use_cfg:
             score = classifier_free_guidance(score, cfg_w)
 
         dsigma = dsigma.unsqueeze(-1) # TODO: make it so this is not necessary
         rev_rate = step_size * dsigma[..., None] * self.graph.reverse_rate(x, score)
+        print("rev_rate", rev_rate[0])
         x = self.graph.sample_rate(x, rev_rate)
         return x
 
@@ -163,7 +166,7 @@ class AncestralPredictor(Predictor):
     def update_fn(self, x0_fn, x, t, step_size, label, cfg_w, use_cfg=False):
         alpha_t = self.noise(t, alpha=True)
         alpha_s = self.noise(t - step_size, alpha=True)
-        unmask_prob = (alpha_s - alpha_t) / (1 - alpha_t)
+        unmask_prob = ((alpha_s - alpha_t) / (1 - alpha_t)).unsqueeze(-1).unsqueeze(-1)
 
         x0_prediction = x0_fn(x, t, label)
 
@@ -171,7 +174,8 @@ class AncestralPredictor(Predictor):
             x0_prediction = classifier_free_guidance(x0_prediction, cfg_w)
 
         if self.graph.absorb:
-            probs = unmask_prob * x0_prediction + (1 -  unmask_prob) * F.one_hot(self.graph.vocab_size * torch.ones_like(x.shape[:-1]), num_classes=self.graph.dim)
+            masking_state = F.one_hot(self.graph.vocab_size * torch.ones_like(x, dtype=torch.long, device=x0_prediction.device), num_classes=self.graph.dim) # one-hot encoding of the absorbing state
+            probs = unmask_prob * x0_prediction + (1 - unmask_prob) * masking_state 
         else:
             raise NotImplementedError("Not implemented yet")
 
@@ -185,7 +189,7 @@ class Denoiser:
         self.prediction_type = prediction_type
 
     def update_fn(self, output_fn, x, t, label, cfg_w, use_cfg=False):
-        beta, alpha = self.noise(t, beta=True, alpha=True)
+        beta = self.noise(t, beta=True)
 
         output = output_fn(x, t, label)
 
@@ -305,15 +309,22 @@ def get_pc_sampler(graph,
             raise ValueError(f"Invalid prediction type: {prediction_type}")
         
         x = graph.sample_limit(*batch_dims).to(device)
+        if print_intermediates:
+                print(x[0])
         timesteps = torch.linspace(1, eps, steps + 1, device=device)
         dt = (1 - eps) / steps
+        print("time steps", timesteps)
+        print("dt", dt)
 
         for i in tqdm(range(steps), desc='Sampling', disable=not use_tqdm):
             t = timesteps[i] * torch.ones(x.shape[0], device=device)
             x = projector(x)
             x = predictor.update_fn(sampling_output_fn, x, t, dt, input_label, cfg_w, use_cfg)
             if print_intermediates:
-                print(x.argmax(dim=-1))
+                print(x[0])
+            
+            if i > 5:
+                raise ValueError("Too many steps")
 
 
         if denoise:
@@ -322,7 +333,7 @@ def get_pc_sampler(graph,
             t = timesteps[-1] * torch.ones(x.shape[0], device=device)
             x = denoiser.update_fn(sampling_output_fn, x, t, input_label, cfg_w, use_cfg)
             if print_intermediates:
-                print(x.argmax(dim=-1))
+                print(x[0])
             
         return x, input_label, cfg_w
     
