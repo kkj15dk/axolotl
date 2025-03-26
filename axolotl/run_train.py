@@ -154,9 +154,9 @@ def _run(rank, world_size, config):
                                              config.ngpus,
                                              config.training.accum,
                                              config.data.train_path,
-                                             config.data.eval_path,
+                                             config.data.valid_path,
                                              config.model.length,
-                                             config.traininng.drop_last,
+                                             config.training.drop_last,
                                              distributed=True,
     )
 

@@ -109,7 +109,9 @@ class EulerPredictor(Predictor):
 
         dsigma = dsigma.unsqueeze(-1) # TODO: make it so this is not necessary
         rev_rate = step_size * dsigma[..., None] * self.graph.reverse_rate(x, score)
+        print("rev_rate", rev_rate[0])
         x = self.graph.sample_rate(x, rev_rate)
+        print(x[0])
         return x
 
 @register_predictor(name="none")
