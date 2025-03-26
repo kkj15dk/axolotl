@@ -36,7 +36,30 @@ def register_predictor(cls=None, *, name=None):
         return _register(cls)
 
 
-def get_predictor(name):
+class Predictor(abc.ABC):
+    """The abstract class for a predictor algorithm."""
+
+    def __init__(self, graph: Graph, noise: Scheduler):
+        super().__init__()
+        self.graph = graph
+        self.noise = noise
+
+    @abc.abstractmethod
+    def update_fn(self, score_fn, x, t, step_size, label, cfg_w, use_cfg=False):
+        """One update of the predictor.
+
+        Args:
+            score_fn: score function
+            x: A PyTorch tensor representing the current state
+            t: A Pytorch tensor representing the current time step.
+
+        Returns:
+            x: A PyTorch tensor of the next state.
+        """
+        pass
+
+
+def get_predictor(name) -> Predictor:
     return _PREDICTORS[name]
 
 
@@ -95,29 +118,6 @@ def classifier_free_guidance(score, cfg_w: torch.Tensor):
     return score
 
 
-class Predictor(abc.ABC):
-    """The abstract class for a predictor algorithm."""
-
-    def __init__(self, graph: Graph, noise: Scheduler):
-        super().__init__()
-        self.graph = graph
-        self.noise = noise
-
-    @abc.abstractmethod
-    def update_fn(self, score_fn, x, t, step_size, label, cfg_w, use_cfg=False):
-        """One update of the predictor.
-
-        Args:
-            score_fn: score function
-            x: A PyTorch tensor representing the current state
-            t: A Pytorch tensor representing the current time step.
-
-        Returns:
-            x: A PyTorch tensor of the next state.
-        """
-        pass
-
-
 @register_predictor(name="none")
 class NonePredictor(Predictor):
     def update_fn(self, score_fn, x, t, step_size, label, cfg_w):
@@ -131,7 +131,7 @@ class EulerPredictor(Predictor):
         print("dsigma", dsigma)
 
         score = score_fn(x, t, label)
-        print("score", score)
+        print("score", score[0])
 
         if use_cfg:
             score = classifier_free_guidance(score, cfg_w)
@@ -256,7 +256,7 @@ def get_pc_sampler(graph,
     else:
         raise ValueError(f"Invalid prediction type: {prediction_type}")
     
-    predictor = get_predictor(predictor)(graph, noise)
+    predictor: Predictor = get_predictor(predictor)(graph, noise)
     projector = proj_fun
     denoiser = Denoiser(graph, noise, prediction_type)
 

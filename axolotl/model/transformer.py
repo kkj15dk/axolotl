@@ -300,7 +300,7 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
             # # assert self.absorb, "Haven't configured this to work." # TODO: is this because of absorb, or geometric noise schedule?
             # esigm1_log = torch.where(sigma < 0.5, torch.expm1(sigma), sigma.exp() - 1).log().to(x.dtype)[:, None, None]
             # x = x - esigm1_log - np.log(x.shape[-1] - 1) # this will be approximately averaged at 0
-
+            print("before scatter", x[0])
             if x.is_nested:
                 x, offsets = packed_tensor_from_jagged(x)
                 indices, _ = packed_tensor_from_jagged(indices)
@@ -308,6 +308,7 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
                 x = jagged_from_packed_tensor(x, offsets)
             else:
                 x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
+            print("after scatter", x[0])
         
         elif self.prediction_type == 'x0':
             if self.absorb:
