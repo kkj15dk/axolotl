@@ -207,7 +207,7 @@ def _run(rank, world_size, config):
                 dist.all_reduce(loss)
                 loss /= world_size
 
-                mprint("step: %d, training_loss: %.5e" % (step, loss.item()))
+                mprint("step: %d, training_loss: %.5f" % (step, loss.item()))
                 mlog({"training_loss": loss.item()}, step=step)
             
             if step % config.training.snapshot_freq_for_preemption == 0 and rank == 0:
@@ -224,7 +224,7 @@ def _run(rank, world_size, config):
                 dist.all_reduce(eval_loss)
                 eval_loss /= world_size
 
-                mprint("step: %d, evaluation_loss: %.5e" % (step, eval_loss.item()))
+                mprint("step: %d, evaluation_loss: %.5f" % (step, eval_loss.item()))
                 mlog({"evaluation_loss": eval_loss.item()}, step=step)
 
             if step > 0 and step % config.training.snapshot_freq == 0 or step == num_train_steps:
