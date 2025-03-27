@@ -7,7 +7,7 @@ defaults:
 ngpus: 1
 tokens: 23 # 23 for uniform
 num_labels: 2 # prokaryotic (0), eukaryotic (1)
-prediction_type: 'log_score' # 'log_score' or 'x0'
+prediction_type: 'x0' # 'log_score' or 'x0'
 
 # length: 4096
 # A100 40GB
@@ -62,7 +62,7 @@ noise:
   sigma_max: 20
 
 sampling:
-  predictor: euler_score # 'euler_score', 'analytic_score, or 'ancestral_x0' 
+  predictor: ancestral_x0 # 'euler_score', 'analytic_score, or 'ancestral_x0' 
   steps: 16
   length: 128
   noise_removal: True

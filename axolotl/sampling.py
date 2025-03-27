@@ -127,10 +127,9 @@ class NonePredictor(Predictor):
 @register_predictor(name="euler_score")
 class EulerPredictor(Predictor):
     def update_fn(self, score_fn, x, t, step_size, label, cfg_w, use_cfg=False):
-        dsigma = self.noise(t, dbeta=True)
-        print("dsigma", dsigma)
+        sigma, dsigma = self.noise(t, beta=True, dbeta=True)
 
-        score = score_fn(x, t, label)
+        score = score_fn(x, t, label, sigma)
         print("score", score[0])
 
         if use_cfg:
@@ -151,7 +150,7 @@ class AnalyticPredictor(Predictor):
         next_beta = self.noise(t - step_size, beta=True)
         dsigma = curr_beta - next_beta
 
-        score = score_fn(x, t, label)
+        score = score_fn(x, t, label, curr_beta)
 
         if use_cfg:
             score = classifier_free_guidance(score, cfg_w)
@@ -192,7 +191,12 @@ class Denoiser:
     def update_fn(self, output_fn, x, t, label, cfg_w, use_cfg=False):
         beta = self.noise(t, beta=True)
 
-        output = output_fn(x, t, label)
+        if self.prediction_type == 'log_score':
+            output = output_fn(x, t, label, beta)
+        elif self.prediction_type == 'x0':
+            output = output_fn(x, t, label)
+        else:
+            raise ValueError(f"Invalid prediction type: {self.prediction_type}")
 
         if use_cfg:
             output = classifier_free_guidance(output, cfg_w)
@@ -314,8 +318,6 @@ def get_pc_sampler(graph,
                 print(x[0])
         timesteps = torch.linspace(1, eps, steps + 1, device=device)
         dt = (1 - eps) / steps
-        print("time steps", timesteps)
-        print("dt", dt)
 
         for i in tqdm(range(steps), desc='Sampling', disable=not use_tqdm):
             t = timesteps[i] * torch.ones(x.shape[0], device=device)
