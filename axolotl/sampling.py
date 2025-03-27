@@ -211,8 +211,14 @@ class Denoiser:
             stag_score = self.graph.staggered_score(output, beta) # beta = dbeta for the last step
             probs = stag_score * self.graph.transp_transition(x, beta)
         elif self.prediction_type == 'x0':
-            raise NotImplementedError("Not implemented yet")
-            probs = output
+            probs = F.softmax(output, dim=-1)
+
+            if self.graph.absorb:
+                one_hot_x = F.one_hot(x, num_classes=self.graph.dim)
+                masked = (x == self.graph.vocab_size).unsqueeze(-1)
+                probs = torch.where(masked, probs, one_hot_x)
+            else:
+                raise NotImplementedError("Not implemented yet")
         else:
             raise ValueError(f"Invalid prediction type: {self.prediction_type}")
 
