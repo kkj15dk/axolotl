@@ -261,10 +261,10 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
 
         self.absorb: bool = config.graph.type == "absorb"
         self.prediction_type = config.prediction_type # 'log_score' or 'x0'
-        self.vocab_size: int = config.tokens + (1 if self.absorb else 0)
+        self.dim: int = config.tokens + (1 if self.absorb else 0)
         self.num_labels: int = config.num_labels
 
-        self.vocab_embed = EmbeddingLayer(config.model.hidden_size, self.vocab_size)
+        self.vocab_embed = EmbeddingLayer(config.model.hidden_size, self.dim)
         self.label_embed = LabelEmbedder(self.num_labels, config.model.cond_dim, config.model.label_dropout)
         self.t_embed = TimestepEmbedder(config.model.cond_dim)
         self.rotary_emb = rotary.Rotary(config.model.hidden_size // config.model.n_heads)
@@ -273,11 +273,11 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
             DiscreteDiTBlock(config.model.hidden_size, config.model.n_heads, config.model.cond_dim, dropout=config.model.dropout) for _ in range(config.model.n_blocks)
         ])
 
-        self.output_layer = DiscreteDitFinalLayer(config.model.hidden_size, self.vocab_size, config.model.cond_dim)
+        self.output_layer = DiscreteDitFinalLayer(config.model.hidden_size, self.dim, config.model.cond_dim)
         self.scale_by_sigma = config.model.scale_by_sigma
 
 
-    def forward(self, indices, t, label):
+    def forward(self, indices, t, label, sigma=None): # sigma is only used for SEDD absorb
 
         x: torch.Tensor = self.vocab_embed(indices)
 
@@ -295,31 +295,18 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
 
 
         if self.prediction_type == 'log_score':
-            if self.scale_by_sigma:
-                raise NotImplementedError("This feature is not implemented anymore")
-            # # assert self.absorb, "Haven't configured this to work." # TODO: is this because of absorb, or geometric noise schedule?
-            # esigm1_log = torch.where(sigma < 0.5, torch.expm1(sigma), sigma.exp() - 1).log().to(x.dtype)[:, None, None]
-            # x = x - esigm1_log - np.log(x.shape[-1] - 1) # this will be approximately averaged at 0
-            print("before scatter", x[0])
-            if x.is_nested:
-                x, offsets = packed_tensor_from_jagged(x)
-                indices, _ = packed_tensor_from_jagged(indices)
-                x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1])) # set the score for the current token to 0, for some reason - i guess it sets the mask score to 0
-                x = jagged_from_packed_tensor(x, offsets)
-            else:
-                x = torch.scatter(x, -1, indices[..., None], torch.zeros_like(x[..., :1]))
-            print("after scatter", x[0])
+            if self.absorb:
+                assert sigma is not None, "Absorb requires sigma to be passed in"
+                esigm1_log = torch.where(sigma < 0.5, torch.expm1(sigma), sigma.exp() - 1).log().to(x.dtype)[:, None, None]
+                x = x - esigm1_log - np.log(x.shape[-1] - 1) # this will be approximately averaged at 0
+            
+            indices_mask = F.one_hot(indices, num_classes=self.dim).to(torch.bool)
+            x = torch.where(indices_mask, 0, x)
         
         elif self.prediction_type == 'x0':
             if self.absorb:
-                if x.is_nested:
-                    x, offsets = packed_tensor_from_jagged(x)
-                    indices, _ = packed_tensor_from_jagged(indices)
-                    x = torch.scatter(x, -1, indices[..., None], -torch.inf * torch.ones_like(x[..., :1])) # set the logits for the mask token to -inf
-                    x = jagged_from_packed_tensor(x, offsets)
-                else:
-                    x = torch.scatter(x, -1, indices[..., None], -torch.inf * torch.ones_like(x[..., :1]))
-        
+                indices_mask = F.one_hot(indices, num_classes=self.dim).to(torch.bool)
+                x = torch.where(indices_mask, -torch.inf, x)
         else:
             raise NotImplementedError(f"Prediction type {self.prediction_type} not implemented yet!")
 

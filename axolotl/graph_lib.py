@@ -88,16 +88,13 @@ class Graph(abc.ABC):
         Constructs the reverse rate. Which is score * transp_rate
         """
         normalized_rate = self.transp_rate(i) * score
-        print("transp_rate", self.transp_rate(i)[0])
 
         normalized_rate.scatter_(-1, i[..., None], torch.zeros_like(normalized_rate))
         normalized_rate.scatter_(-1, i[..., None], -normalized_rate.sum(dim=-1, keepdim=True))
-        print("normalized_rate", normalized_rate[0])
         return normalized_rate
 
 
     def sample_rate(self, i, rate):
-        print("sample rate probs", F.one_hot(i, num_classes=self.dim).to(rate) + rate)
         return sample_categorical(F.one_hot(i, num_classes=self.dim).to(rate) + rate)
 
     
@@ -340,6 +337,7 @@ class Absorbing(Graph):
             x0, _ = packed_tensor_from_jagged(x0)
             dgamma_times_alpha, _ = expand_using_offsets(dgamma_times_alpha, offsets)
         else:
+            raise NotImplementedError("Diffusion loss not tested yet for normal, non-nested tensors")
             dgamma_times_alpha = dgamma_times_alpha.expand_as(x)
             offsets = None
         
@@ -349,8 +347,8 @@ class Absorbing(Graph):
         neg_cross_entropy = torch.where(one_hot_x0.to(dtype=torch.bool), log_p, 0) # to avoid nans when with -inf * 0
         neg_cross_entropy = torch.sum(neg_cross_entropy, dim=-1)
 
-        mask = (x == self.vocab_size).float()
-        neg_cross_entropy = torch.where(mask.to(dtype=torch.bool), -dgamma_times_alpha * neg_cross_entropy, 0) # to avoid nans when with -inf * 0
+        mask = (x == self.vocab_size)
+        neg_cross_entropy = torch.where(mask, -dgamma_times_alpha * neg_cross_entropy, 0) # to avoid nans when with -inf * 0
 
         if offsets is not None:
             neg_cross_entropy = jagged_from_packed_tensor(neg_cross_entropy, offsets) # (B, j1)

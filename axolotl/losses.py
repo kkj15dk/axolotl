@@ -22,17 +22,14 @@ def get_loss_fn(noise, graph: graph_lib.Graph, train, prediction_type='log_score
             t0 = torch.rand((1,), device=input_ids.device).item()
             t = torch.remainder(t0 + torch.arange(start=0, end=1, step=1/bs, device=input_ids.device), 1)
         beta = noise(t, beta=True)
-        print("beta", beta)
-        print("t", t)
-        print("input_ids", input_ids[0])
+
         perturbed_batch = graph.sample_transition(input_ids, beta[:, None]) # should probably change to alpha-based
-        print("perturbed_batch", perturbed_batch[0])
 
         if prediction_type == 'log_score':
             dbeta = noise(t, dbeta=True)
 
             log_score_fn = mutils.get_output_fn(model, train=train, exponentiate=False)
-            log_score = log_score_fn(perturbed_batch, t, label)
+            log_score = log_score_fn(perturbed_batch, t, label, sigma=beta)
             loss = graph.score_entropy(log_score, beta[:, None], perturbed_batch, input_ids) # loss shape: (B, j1)
 
             if log_score.is_nested:
