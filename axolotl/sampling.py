@@ -257,7 +257,7 @@ def get_pc_sampler(graph,
                    num_labels: int=2,
                    use_tqdm: bool=False,
                    prediction_type: str=None,
-                   print_intermediates: bool=True,
+                   print_intermediates: bool=False,
 ):
     if prediction_type == 'x0':
         assert predictor == 'ancestral_x0', "Prediction type x0 requires the predictor to be ancestral_x0"
