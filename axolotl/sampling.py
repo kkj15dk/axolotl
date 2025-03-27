@@ -100,22 +100,26 @@ def write_samples(output: str,
                 current_table.add_data(steps, i, sequence_label, w, steps, seq) # workaround
 
 
-def classifier_free_guidance(score, cfg_w: torch.Tensor):
+def classifier_free_guidance(output, cfg_w: torch.Tensor):
     """Guidance for classifier-free sampling."""
     
     assert isinstance(cfg_w, torch.Tensor), f'cfg_w must be a tensor, got {type(cfg_w)}'
 
-    n = score.shape[0] // 2
+    n = output.shape[0] // 2
     assert cfg_w.dim() == 1, f'cfg_w must be a 1D tensor, got {cfg_w.dim()}'
     assert cfg_w.shape[0] == n, f'cfg_w must have length {n}, got {cfg_w.shape[0]}'
     cfg_w = cfg_w.unsqueeze(-1).unsqueeze(-1)
 
-    cond_score = score[:n]
-    uncond_score = score[n:]
+    cond_output = output[:n]
+    uncond_output = output[n:]
 
-    score = uncond_score + cfg_w * (cond_score - uncond_score)
+    output = torch.where(
+        torch.isinf(uncond_output),
+        uncond_output,  # Preserve -inf in uncond_output
+        uncond_output + cfg_w * (cond_output - uncond_output)
+    )
 
-    return score
+    return output
 
 
 @register_predictor(name="none")
@@ -130,14 +134,12 @@ class EulerPredictor(Predictor):
         sigma, dsigma = self.noise(t, beta=True, dbeta=True)
 
         score = score_fn(x, t, label, sigma)
-        print("score", score[0])
 
         if use_cfg:
             score = classifier_free_guidance(score, cfg_w)
 
         dsigma = dsigma.unsqueeze(-1) # TODO: make it so this is not necessary
         rev_rate = step_size * dsigma[..., None] * self.graph.reverse_rate(x, score)
-        print("rev_rate", rev_rate[0])
         x = self.graph.sample_rate(x, rev_rate)
         print(x[0])
         return x
@@ -163,19 +165,22 @@ class AnalyticPredictor(Predictor):
 
 @register_predictor(name="ancestral_x0")
 class AncestralPredictor(Predictor):
-    def update_fn(self, x0_fn, x, t, step_size, label, cfg_w, use_cfg=False):
+    def update_fn(self, logits_fn, x, t, step_size, label, cfg_w, use_cfg=False):
         alpha_t = self.noise(t, alpha=True)
         alpha_s = self.noise(t - step_size, alpha=True)
-        unmask_prob = ((alpha_s - alpha_t) / (1 - alpha_t)).unsqueeze(-1).unsqueeze(-1)
+        unmask_prob = ((alpha_s - alpha_t) / (1 - alpha_t)).unsqueeze(-1).unsqueeze(-1) # (B, 1, 1)
 
-        x0_prediction = x0_fn(x, t, label)
-
+        x0_logits = logits_fn(x, t, label)
         if use_cfg:
-            x0_prediction = classifier_free_guidance(x0_prediction, cfg_w)
+            x0_logits = classifier_free_guidance(x0_logits, cfg_w) # TODO: Should classifier free guidance be applied to the logits or the probabilities? - It's probably not the probabilities, as this can make negative probabilities
+        x0_prediction = F.softmax(x0_logits, dim=-1)
 
         if self.graph.absorb:
             masking_state = F.one_hot(self.graph.vocab_size * torch.ones_like(x, dtype=torch.long, device=x0_prediction.device), num_classes=self.graph.dim) # one-hot encoding of the absorbing state
             probs = unmask_prob * x0_prediction + (1 - unmask_prob) * masking_state 
+            one_hot_x = F.one_hot(x, num_classes=self.graph.dim)
+            masked = (x == self.graph.vocab_size).unsqueeze(-1)
+            probs = torch.where(masked, probs, one_hot_x)
         else:
             raise NotImplementedError("Not implemented yet")
 
@@ -206,6 +211,7 @@ class Denoiser:
             stag_score = self.graph.staggered_score(output, beta) # beta = dbeta for the last step
             probs = stag_score * self.graph.transp_transition(x, beta)
         elif self.prediction_type == 'x0':
+            raise NotImplementedError("Not implemented yet")
             probs = output
         else:
             raise ValueError(f"Invalid prediction type: {self.prediction_type}")
@@ -326,8 +332,8 @@ def get_pc_sampler(graph,
             if print_intermediates:
                 print(x[0])
             
-            if i > 5:
-                raise ValueError("Too many steps")
+            # if i > 5: # testing
+            #     raise ValueError("Too many steps")
 
 
         if denoise:

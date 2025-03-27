@@ -49,6 +49,8 @@ def get_output_fn(model, train=False, exponentiate=False, use_cfg=False, num_lab
                 assert num_labels is not None, "Must provide num_labels if using cfg"
                 x = torch.cat([x, x], dim=0)
                 t = torch.cat([t, t], dim=0)
+                if sigma is not None:
+                    sigma = torch.cat([sigma, sigma], dim=0)
                 uncond = torch.ones_like(label, dtype=torch.long) * num_labels # assume that the uncond label is the last label
                 label = torch.cat([label, uncond], dim=0)
 
