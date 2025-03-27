@@ -20,10 +20,10 @@ prediction_type: 'x0' # 'log_score' or 'x0'
 training:
   batch_size: 128
   drop_last: True
-  num_workers: 4 # number of workers for each dataloader
+  num_workers: 8 # number of workers for each dataloader
   accum: 1
   n_iters: 1300001
-  snapshot_freq: 100
+  snapshot_freq: 2000
   log_freq: 50
   eval_freq: 100
   snapshot_freq_for_preemption: 1000
@@ -55,7 +55,7 @@ graph:
 
 noise:
   type: linear
-  eps: 1e-3
+  eps: 1e-4
   sigma_min: 1e-4
   sigma_max: 20
 
@@ -68,7 +68,7 @@ sampling:
   label: 'random' # one of 'random', 'eukaryotic', or 'prokaryotic'. 'random' gives a mix of eukaryotic and prokaryotic labels
 
 eval:
-  batch_size: 512
+  batch_size: 256
   perplexity: True
   perplexity_batch_size: 128
 
@@ -83,7 +83,7 @@ optim:
   grad_clip: 1.
 
 wandb:
-  use_wandb: False
+  use_wandb: True
   entity: kkj15dk-axolotl
   project: axolotl
 

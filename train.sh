@@ -2,7 +2,7 @@
 ### General options 
 ### -- specify queue -- 
 #BSUB -q gpua100
-#BSUB -R "select[gpu80gb]"
+#BSUB -R "select[gpu40gb]"
 ### -- if your job needs to depend on another job --
 ###BSUB -w "done(24247709)"
 ### -- set the job Name -- 
@@ -31,4 +31,4 @@ source .venv/bin/activate
 
 # here follow the commands you want to execute
 # graph.type=absorb, uniform noise.type=loglinear, geometric
-python3 axolotl/train.py graph.type=uniform noise.type=loglinear hydra.run.dir=/work3/s204514/exp_local/UniRef50_grouped/2025.03.01/112015
+python3 axolotl/train.py prediction_type=log_score sampling.predictor=euler_score
