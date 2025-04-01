@@ -181,8 +181,8 @@ class AncestralPredictor(Predictor):
             one_hot_x = F.one_hot(x, num_classes=self.graph.dim)
             masked = (x == self.graph.vocab_size).unsqueeze(-1)
             probs = torch.where(masked, probs, one_hot_x)
-        else:
-            raise NotImplementedError("Not implemented yet")
+        elif not self.graph.absorb:
+            probs = unmask_prob * x0_prediction + (1 - unmask_prob) * F.one_hot(x, num_classes=self.graph.dim)
 
         return sample_categorical(probs)
 
@@ -217,14 +217,16 @@ class Denoiser:
                 one_hot_x = F.one_hot(x, num_classes=self.graph.dim)
                 masked = (x == self.graph.vocab_size).unsqueeze(-1)
                 probs = torch.where(masked, probs, one_hot_x)
-            else:
-                raise NotImplementedError("Not implemented yet")
+            elif not self.graph.absorb:
+                pass # no need to do anything
         else:
             raise ValueError(f"Invalid prediction type: {self.prediction_type}")
 
         # truncate probabilities
         if self.graph.absorb:
             probs = probs[..., :-1]
+        elif not self.graph.absorb:
+            pass # no need to do anything
         
         #return probs.argmax(dim=-1)
         return sample_categorical(probs)
@@ -264,7 +266,7 @@ def get_pc_sampler(graph,
                    num_labels: int=2,
                    use_tqdm: bool=False,
                    prediction_type: str=None,
-                   print_intermediates: bool=False,
+                   print_intermediates: bool=True,
 ):
     if prediction_type == 'x0':
         assert predictor == 'ancestral_x0', "Prediction type x0 requires the predictor to be ancestral_x0"

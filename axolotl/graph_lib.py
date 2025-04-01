@@ -223,6 +223,57 @@ class Uniform(Graph):
         
         return entropy
 
+    def recon_loss(self, alpha_t1):
+        # raise NotImplementedError("Reconstruction loss not implemented for uniform graph")
+        loss_recon = (
+            (1 - alpha_t1)
+            * np.log(self.dim)
+        ) # B
+        return loss_recon
+    
+    def latent_loss(self):
+        # negligible
+        return 0
+
+    def diffusion_loss(self, logits, dgamma_times_alpha, x, x0):
+
+        # convert to flat tensors
+        if logits.is_nested:
+            logits, offsets = packed_tensor_from_jagged(logits)
+            x, _ = packed_tensor_from_jagged(x)
+            x0, _ = packed_tensor_from_jagged(x0)
+            dgamma_times_alpha, _ = expand_using_offsets(dgamma_times_alpha, offsets)
+        else:
+            raise NotImplementedError("Diffusion loss not tested yet for normal, non-nested tensors")
+            dgamma_times_alpha = dgamma_times_alpha.expand_as(x)
+            offsets = None
+        
+        # MD4 implementation, translated from jax
+        log_p = torch.log_softmax(logits, dim=-1)
+        one_hot_x0 = F.one_hot(x0, num_classes=self.dim)
+        neg_cross_entropy = torch.where(one_hot_x0.to(dtype=torch.bool), log_p, 0) # to avoid nans when with -inf * 0
+        neg_cross_entropy = torch.sum(neg_cross_entropy, dim=-1)
+        neg_cross_entropy = -dgamma_times_alpha * neg_cross_entropy
+
+        if offsets is not None:
+            neg_cross_entropy = jagged_from_packed_tensor(neg_cross_entropy, offsets) # (B, j1)
+        
+        return neg_cross_entropy
+    
+    def x0_entropy(self, logits, alpha_t1, dgamma_times_alpha, x, x0):
+
+        # reconsuction loss:
+        loss_recon = self.recon_loss(alpha_t1) # int
+
+        # latent loss:
+        loss_prior = self.latent_loss() # 0
+
+        # diffusion loss:
+        loss_diffusion = self.diffusion_loss(logits, dgamma_times_alpha, x, x0) # (B, j1)
+
+        loss = loss_recon + loss_prior + loss_diffusion
+
+        return loss
 
 class Absorbing(Graph):
     def __init__(self, dim):

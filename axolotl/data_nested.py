@@ -13,12 +13,17 @@ from datasets import load_from_disk, Dataset
 from torch.utils.data import DataLoader, DistributedSampler, Sampler
 from typing import Optional, List
 
-def cycle_loader(dataloader):
+def cycle_loader(dataloader: DataLoader):
     while True:
-        for data in dataloader:
+        # iterate over the dataloader
+        print("Starting dataloader...")
+        print("first batch: ", 0, next(iter(dataloader))['input_ids'].offsets())
+        for i, data in enumerate(dataloader):
             yield data
         # go to next epoch
         dataloader.batch_sampler.set_epoch(dataloader.batch_sampler.epoch + 1)
+        print("End of dataloader, restarting...")
+        print("last batch: ", i, data['input_ids'].offsets())
 
 
 def get_dataset(name):
@@ -109,13 +114,14 @@ class SequencePackingSampler(Sampler):
                  total_length: int=None,
                  seed=0,
                  drop_last=False,
+                 epoch=0,
     ):
         
         self.dataset = dataset # a clustered dataset
         self.max_length = max_length
         self.total_length = total_length
         self.seed = seed
-        self.epoch = 0
+        self.epoch = epoch
         self.drop_last = drop_last
 
         if indices is None: # Indices should only be used with ditributed sampler
@@ -134,43 +140,47 @@ class SequencePackingSampler(Sampler):
 
         batch = []
         batch_length = 0
+        i_pseudo_random = 0 # to deterministically sample from the clusters, we use a pseudo random number generator with a seed that is incremented for each sample in the batch
         for idx in indices:
             cluster_size = self.dataset[idx]['cluster_size'].item()
             if cluster_size == 1:
                 cluster_idx = 0
             else:
-                # To deterministically sample from the clusters, we use the epoch to index into the cluster, same as in the collate_fn (very important)
-                cluster_idx = torch.randint(0, cluster_size, (1,), generator=torch.Generator().manual_seed(self.seed + self.epoch)).item()
+                # To deterministically sample from the clusters, we use a pseudo random number generator with a seed that is incremented for each sample in the batch, this is same as in the collate_fn (very important)
+                cluster_idx = torch.randint(0, cluster_size, (1,), generator=torch.Generator().manual_seed(self.seed + i_pseudo_random)).item()
 
             length = self.dataset[idx]['length'][cluster_idx].item()
             length = min(length, self.max_length)
             
             batch.append(idx)
             batch_length += length
+            i_pseudo_random += 1
 
             if batch_length >= self.total_length:
                 yield batch
+                # reset the batch
                 batch = []
                 batch_length = 0
+                i_pseudo_random = 0
 
         if len(batch) > 0 and not self.drop_last:
+            print("last batch of total length: ", batch_length)
             yield batch
 
 
     def collate_fn(self, batch):
-        g = torch.Generator().manual_seed(self.seed + self.epoch)
-
-        # get the sizes of the clusters
-        cluster_sizes = [x['cluster_size'] for x in batch]
+        g = torch.Generator().manual_seed(self.seed)
         
         indexes = []
-        for cs in cluster_sizes:
-            if cs == 1:
+        for i_pseudo_random, x in enumerate(batch):
+            cluster_size = x['cluster_size'].item()
+            if cluster_size == 1:
                 indexes.append(0)
                 continue
-            idx = torch.randint(0, cs, (1,), generator=torch.Generator().manual_seed(self.seed + self.epoch)).item()
+            # get the index of the cluster to sample from
+            idx = torch.randint(0, cluster_size, (1,), generator=torch.Generator().manual_seed(self.seed + i_pseudo_random)).item()
             indexes.append(idx)
-
+        
         # get the input_ids for each cluster
         input_ids_list = [x["input_ids"][i] for x, i in zip(batch, indexes)]
         input_ids_list = [maybe_truncate(input_ids, self.max_length, generator=g) for input_ids in input_ids_list[:-1]]
@@ -186,7 +196,7 @@ class SequencePackingSampler(Sampler):
         input_ids = torch.nested.nested_tensor(input_ids_list, layout=torch.jagged)
         label = torch.tensor([x["label"][i] for x, i in zip(batch, indexes)])
 
-        return {"input_ids": input_ids, "label": label}
+        return {"input_ids": input_ids, "label": label, "batch": batch}
 
     def __len__(self):
         raise NotImplementedError("SequencePackingSampler does not support __len__")
@@ -215,6 +225,7 @@ class DistributedSequencePackingSampler(DistributedSampler):
                  total_length: int=None, # total length of the batch (total amount of tokens)
                  seed=0,
                  drop_last=False,
+                 epoch=0,
     ):
         super().__init__(dataset, num_replicas=num_replicas, rank=rank, shuffle=shuffle, seed=seed, drop_last=False)
 
@@ -223,18 +234,18 @@ class DistributedSequencePackingSampler(DistributedSampler):
         self.seed = seed
         self.dataset = dataset
         self.drop_last = drop_last
-        self.epoch = 0
+        self.epoch = epoch
 
     def __iter__(self):
-        self.indices = list(super().__iter__())
+        self.indices = list(super().__iter__()) # use the indices from the distributed sampler
         batch_sampler = SequencePackingSampler(self.dataset, 
                                                indices=self.indices, 
                                                max_length=self.max_length, 
                                                total_length=self.total_length, 
                                                seed=self.seed,
                                                drop_last=self.drop_last,
+                                               epoch=self.epoch, # set the epoch to the epoch of the distributed sampler
         )
-        batch_sampler.set_epoch(self.epoch) # set the epoch to the epoch of the distributed sampler
         self.collate_fn = batch_sampler.collate_fn # set the collate_fn to the collate_fn of the SequencePackingSampler
         return iter(batch_sampler)
 
@@ -243,16 +254,3 @@ class DistributedSequencePackingSampler(DistributedSampler):
 
     def __len__(self):
         raise NotImplementedError("DistributedSequencePackingSampler does not support __len__")
-
-    def set_epoch(self, epoch: int) -> None:
-        r"""
-        Set the epoch for this sampler.
-
-        When :attr:`shuffle=True`, this ensures all replicas
-        use a different random ordering for each epoch. Otherwise, the next iteration of this
-        sampler will yield the same ordering.
-
-        Args:
-            epoch (int): Epoch number.
-        """
-        self.epoch = epoch

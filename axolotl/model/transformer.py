@@ -307,6 +307,8 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
             if self.absorb:
                 indices_mask = F.one_hot(indices, num_classes=self.dim).to(torch.bool)
                 x = torch.where(indices_mask, -torch.inf, x)
+            elif not self.absorb:
+                pass
         else:
             raise NotImplementedError(f"Prediction type {self.prediction_type} not implemented yet!")
 
