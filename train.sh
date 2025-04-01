@@ -31,4 +31,4 @@ source .venv/bin/activate
 
 # here follow the commands you want to execute
 # graph.type=absorb, uniform noise.type=loglinear, geometric
-python3 axolotl/train.py prediction_type=log_score sampling.predictor=euler_score
+python3 axolotl/train.py prediction_type=x0 sampling.predictor=ancestral_x0

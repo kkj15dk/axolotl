@@ -6,7 +6,7 @@ defaults:
 ngpus: 1
 tokens: 23 # 23 for uniform
 num_labels: 2 # prokaryotic (0), eukaryotic (1)
-prediction_type: 'x0' # 'log_score' or 'x0'
+prediction_type: 'log_score' # 'log_score' or 'x0'
 
 # length: 4096
 # A100 40GB
@@ -18,12 +18,12 @@ prediction_type: 'x0' # 'log_score' or 'x0'
 # medium => batch_size=8
 
 training:
-  batch_size: 4
+  batch_size: 128
   drop_last: True
-  num_workers: 4 # number of workers for each dataloader
-  accum: 1
+  num_workers: 8 # number of workers for each dataloader
+  accum: 4
   n_iters: 1300001
-  snapshot_freq: 500
+  snapshot_freq: 1000
   log_freq: 50
   eval_freq: 100
   snapshot_freq_for_preemption: 1000
@@ -34,14 +34,14 @@ training:
   t_sampling: 'uniform' # 'antithetic' or 'uniform'
 
 data:
-  name: IPR036736_90_grouped
-  train_path: /home/kkj/axolotl/datasets/IPR036736_90_grouped/train
-  valid_path: /home/kkj/axolotl/datasets/IPR036736_90_grouped/valid
-  tokenizer_path: '/home/kkj/axolotl/tokenizer/tokenizer_absorb'
   # name: IPR036736_90_grouped
-  # train_path: /work3/s204514/datasets/IPR036736_90_grouped/train
-  # valid_path: /work3/s204514/datasets/IPR036736_90_grouped/valid
-  # tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb'
+  # train_path: /home/kkj/axolotl/datasets/IPR036736_90_grouped/train
+  # valid_path: /home/kkj/axolotl/datasets/IPR036736_90_grouped/valid
+  # tokenizer_path: '/home/kkj/axolotl/tokenizer/tokenizer_absorb'
+  name: IPR036736_90_grouped
+  train_path: /work3/s204514/datasets/IPR036736_90_grouped/train
+  valid_path: /work3/s204514/datasets/IPR036736_90_grouped/valid
+  tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb'
   # name: UniRef50_grouped
   # train_path: /work3/s204514/datasets/UniRef50_grouped/train
   # valid_path: /work3/s204514/datasets/UniRef50_grouped/valid
@@ -49,7 +49,7 @@ data:
   # tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_uniform'
 
 graph:
-  type: uniform
+  type: absorb
   file: data
   report_all: False
 
@@ -60,7 +60,7 @@ noise:
   sigma_max: 20
 
 sampling:
-  predictor: ancestral_x0 # 'euler_score', 'analytic_score, or 'ancestral_x0' 
+  predictor: euler_score # 'euler_score', 'analytic_score, or 'ancestral_x0' 
   steps: 64
   length: 256
   noise_removal: True
@@ -68,9 +68,9 @@ sampling:
   label: 'random' # one of 'random', 'eukaryotic', or 'prokaryotic'. 'random' gives a mix of eukaryotic and prokaryotic labels
 
 eval:
-  batch_size: 4
+  batch_size: 256
   perplexity: True
-  perplexity_batch_size: 4
+  perplexity_batch_size: 64
 
 optim:
   weight_decay: 0
@@ -83,7 +83,7 @@ optim:
   grad_clip: 1.
 
 wandb:
-  use_wandb: False
+  use_wandb: True
   entity: kkj15dk-axolotl
   project: axolotl
 
