@@ -227,7 +227,7 @@ def _run(rank, world_size, config):
                 mprint("step: %d, evaluation_loss: %.5f" % (step, eval_loss.item()))
                 mlog({"evaluation_loss": eval_loss.item()}, step=step)
 
-            if (step > 0 and step % config.training.snapshot_freq == 0) or step == num_train_steps:
+            if step % config.training.snapshot_freq == 0 or step == num_train_steps:
                 # Save the checkpoint.
                 save_step = step // config.training.snapshot_freq
                 if rank == 0 and config.training.snapshot_checkpoint:
