@@ -13,7 +13,7 @@ from datasets import load_from_disk, Dataset
 from torch.utils.data import DataLoader, DistributedSampler, Sampler
 from typing import Optional, List
 
-def cycle_loader(dataloader: DataLoader):
+def cycle_loader(dataloader: DataLoader, shuffle_each_epoch: bool = True):
     while True:
         # iterate over the dataloader
         print("Starting dataloader...")
@@ -21,7 +21,8 @@ def cycle_loader(dataloader: DataLoader):
         for i, data in enumerate(dataloader):
             yield data
         # go to next epoch
-        dataloader.batch_sampler.set_epoch(dataloader.batch_sampler.epoch + 1)
+        if shuffle_each_epoch:
+            dataloader.batch_sampler.set_epoch(dataloader.batch_sampler.epoch + 1)
         print("End of dataloader, restarting...")
         print("last batch: ", i, data['input_ids'].offsets())
 

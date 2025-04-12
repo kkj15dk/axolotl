@@ -27,7 +27,7 @@ And **outfile**.clstr, containing an overview of which entries are in which clus
 ### converting clusters into a csv
 
 This is then converted into a bunch of fasta files, where each fasta file contains the entries of a single cluster, using the perl script make_multi_seq.pl:
-infile is the same input as in cd-hit, outfile.clstr is teh output of cd-hit.
+infile is the same input as in cd-hit, outfile.clstr is the output of cd-hit.
 make_multi_seq **infile** **outfile**.clstr **out_folder** **1**
 
 **1** signifies, that every cluster must have at least 1 entry, or else it is discarded. This can be set to a higher value, if desired.
