@@ -158,8 +158,6 @@ def get_dataset(name, mode, cache_dir=None, block_size=1024, num_proc=8):
             text = example['sentence']
         else:
             text = example["text"]
-        # print(list(example.keys()))
-        # exit()
         
         if detokenizer is not None:
             text = _apply_detokenizer(detokenizer)(text)

@@ -105,21 +105,6 @@ def get_step_fn(noise, graph, train, optimize_fn, accum, prediction_type, t_samp
         nonlocal total_loss
 
         model = state['model']
-        # def forward_hook(module, input, output):
-        #     try:
-        #         print(f"Forward hook for {module.__class__.__name__}: input shape {input[0].shape}, output shape {output.shape}")
-        #     except:
-        #         print(f"{module.__class__.__name__}: can't print shapes")
-        # def backward_hook(module, grad_input, grad_output):
-        #     try:
-        #         print(f"Backward hook for {module.__class__.__name__}: grad_input shape {grad_input[0].shape}, grad_output shape {grad_output[0].shape}")
-        #     except:
-        #         print(f"{module.__class__.__name__}: can't print shapes")
-
-        # # Register hooks
-        # for name, module in model.named_modules():
-        #     module.register_forward_hook(forward_hook)
-        #     module.register_backward_hook(backward_hook)
 
         if train:
             optimizer = state['optimizer']
@@ -129,10 +114,7 @@ def get_step_fn(noise, graph, train, optimize_fn, accum, prediction_type, t_samp
             # graph = make_dot(loss_fn(model, batch, cond=cond).mean() / accum, params=dict(model.named_parameters()))
             # graph.render("graph")
 
-            # time1 = timeit.default_timer()
             scaler.scale(loss).backward()
-            # time2 = timeit.default_timer()
-            # print("time to call backwards", time2 - time1)
 
             accum_iter += 1
             total_loss += loss.detach()

@@ -16,15 +16,15 @@ from typing import Optional, List
 def cycle_loader(dataloader: DataLoader, shuffle_each_epoch: bool = True):
     while True:
         # iterate over the dataloader
-        print("Starting dataloader...")
-        print("first batch: ", 0, next(iter(dataloader))['input_ids'].offsets())
+        # print("Starting dataloader...")
+        # print("first batch: ", 0, next(iter(dataloader))['input_ids'].offsets())
         for i, data in enumerate(dataloader):
             yield data
         # go to next epoch
         if shuffle_each_epoch:
             dataloader.batch_sampler.set_epoch(dataloader.batch_sampler.epoch + 1)
-        print("End of dataloader, restarting...")
-        print("last batch: ", i, data['input_ids'].offsets())
+        # print("End of dataloader, restarting...")
+        # print("last batch: ", i, data['input_ids'].offsets())
 
 
 def get_dataset(name):
@@ -165,7 +165,7 @@ class SequencePackingSampler(Sampler):
                 i_pseudo_random = 0
 
         if len(batch) > 0 and not self.drop_last:
-            print("last batch of total length: ", batch_length)
+            # print("last batch of total length: ", batch_length)
             yield batch
 
 
@@ -189,7 +189,6 @@ class SequencePackingSampler(Sampler):
         # the last input ids should be truncated to the remaining length, to not exceed the total length
         length_sum = sum([min(x["length"][i].item(), self.max_length) for x, i in zip(batch, indexes[:-1])])
         last_length = min(self.total_length - length_sum, self.max_length)
-        # print("total length: ", length_sum + last_length)
 
         input_ids_list.append(maybe_truncate(input_ids_list[-1], last_length, generator=g))
 

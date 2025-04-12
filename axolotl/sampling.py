@@ -141,7 +141,6 @@ class EulerPredictor(Predictor):
         dsigma = dsigma.unsqueeze(-1) # TODO: make it so this is not necessary
         rev_rate = step_size * dsigma[..., None] * self.graph.reverse_rate(x, score)
         x = self.graph.sample_rate(x, rev_rate)
-        print(x[0])
         return x
 
 
@@ -266,7 +265,7 @@ def get_pc_sampler(graph,
                    num_labels: int=2,
                    use_tqdm: bool=False,
                    prediction_type: str=None,
-                   print_intermediates: bool=True,
+                   print_intermediates: bool=False,
 ):
     if prediction_type == 'x0':
         assert predictor == 'ancestral_x0', "Prediction type x0 requires the predictor to be ancestral_x0"

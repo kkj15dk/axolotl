@@ -97,7 +97,7 @@ class Scheduler(abc.ABC, nn.Module):
         return -self.alpha(t).log()
     
     def dbeta(self, t):
-        return self.dalpha(t) / self.alpha(t)
+        return - self.dalpha(t) / self.alpha(t)
 
     def alpha(self, t):
         return (1.0 - 2 * self.eps) * self._alpha(t) + self.eps
@@ -106,7 +106,7 @@ class Scheduler(abc.ABC, nn.Module):
         return (1.0 - 2 * self.eps) * self._dalpha(t)
 
     def dgamma_times_beta(self, t):
-        return self.dalpha(t) / (1 - self.alpha(t))
+        return - self.dalpha(t) / (1 - self.alpha(t))
     
 
     @abc.abstractmethod
@@ -124,7 +124,7 @@ class CosineScheduler(Scheduler, nn.Module):
         self.empty = nn.Parameter(torch.tensor(0.0))
     
     def _dalpha(self, t):
-        return -torch.pi / 2 * torch.sin(torch.pi / 2 * (1 - t))
+        return -torch.pi / 2 * torch.cos(torch.pi / 2 * t)
     
     def _alpha(self, t):
         return 1 - torch.cos(torch.pi / 2 * (1 - t))
@@ -136,7 +136,7 @@ class LinearScheduler(Scheduler, nn.Module):
         self.empty = nn.Parameter(torch.tensor(0.0))
     
     def _dalpha(self, t):
-        return torch.ones_like(t)
+        return - torch.ones_like(t)
     
     def _alpha(self, t):
         return 1 - t

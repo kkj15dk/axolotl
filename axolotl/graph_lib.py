@@ -253,7 +253,7 @@ class Uniform(Graph):
         one_hot_x0 = F.one_hot(x0, num_classes=self.dim)
         neg_cross_entropy = torch.where(one_hot_x0.to(dtype=torch.bool), log_p, 0) # to avoid nans when with -inf * 0
         neg_cross_entropy = torch.sum(neg_cross_entropy, dim=-1)
-        neg_cross_entropy = -dgamma_times_alpha * neg_cross_entropy
+        neg_cross_entropy = dgamma_times_alpha * neg_cross_entropy
 
         if offsets is not None:
             neg_cross_entropy = jagged_from_packed_tensor(neg_cross_entropy, offsets) # (B, j1)
@@ -399,7 +399,7 @@ class Absorbing(Graph):
         neg_cross_entropy = torch.sum(neg_cross_entropy, dim=-1)
 
         mask = (x == self.vocab_size)
-        neg_cross_entropy = torch.where(mask, -dgamma_times_alpha * neg_cross_entropy, 0) # to avoid nans when with -inf * 0
+        neg_cross_entropy = torch.where(mask, dgamma_times_alpha * neg_cross_entropy, 0) # to avoid nans when with -inf * 0
 
         if offsets is not None:
             neg_cross_entropy = jagged_from_packed_tensor(neg_cross_entropy, offsets) # (B, j1)

@@ -166,17 +166,6 @@ def _run(rank, world_size, config):
     train_iter = iter(train_ds)
     eval_iter = iter(eval_ds)
 
-    # # Test
-    # batch = next(eval_iter)['input_ids'].to(device)
-    # decoded = tokenizer.batch_decode(batch)
-    # for i, seq in enumerate(decoded):
-    #     length = len(seq)
-    #     print(i)
-    #     print("length", length)
-    #     print(seq)
-
-    # raise ValueError("Test")
-
     # Build one-step training and evaluation functions
     optimize_fn = losses.optimization_manager(config)
     train_step_fn = losses.get_step_fn(noise, graph, True, optimize_fn, config.training.accum, config.prediction_type, config.training.t_sampling)
