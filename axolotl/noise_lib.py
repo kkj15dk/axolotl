@@ -94,7 +94,7 @@ class Scheduler(abc.ABC, nn.Module):
         return output
 
     def beta(self, t):
-        return -self.alpha(t).log()
+        return - self.alpha(t).log()
     
     def dbeta(self, t):
         return - self.dalpha(t) / self.alpha(t)
