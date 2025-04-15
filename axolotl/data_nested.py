@@ -52,7 +52,8 @@ def get_dataloaders(train_batch_size,
                     max_length,
                     drop_last,
                     num_workers,
-                    distributed=True
+                    distributed=True,
+                    epoch=0,
 ):
     if train_batch_size % (ngpus * accum) != 0:
             raise ValueError(f"Train Batch Size {train_batch_size} is not divisible by {ngpus} gpus with accumulation {accum}.")
@@ -66,22 +67,26 @@ def get_dataloaders(train_batch_size,
         train_sampler = DistributedSequencePackingSampler(train_set,
                                                           max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
                                                           total_length=max_length * train_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                          epoch=epoch,
                                                           drop_last=drop_last,
         )
         val_sampler = DistributedSequencePackingSampler(valid_set, 
                                                         max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
                                                         total_length=max_length * valid_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                        epoch=epoch,
                                                         drop_last=drop_last,
         )
     else:
         train_sampler = SequencePackingSampler(train_set,
                                                max_length=max_length, 
                                                total_length=max_length * train_batch_size // (ngpus * accum), 
+                                               epoch=epoch,
                                                drop_last=drop_last,
         )
         val_sampler = SequencePackingSampler(valid_set, 
                                              max_length=max_length, 
                                              total_length=max_length * valid_batch_size // (ngpus * accum), 
+                                             epoch=epoch,
                                              drop_last=drop_last,
         )
 
@@ -137,7 +142,7 @@ class SequencePackingSampler(Sampler):
             g = torch.Generator().manual_seed(self.seed + self.epoch)
             indices = torch.randperm(len(self.indices), generator=g).tolist()
         else:
-            indices = self.indices
+            indices = self.indices # leave the shuffling to the distributed sampler
 
         batch = []
         batch_length = 0

@@ -30,4 +30,4 @@ module load python3/3.13.0
 source .venv/bin/activate
 
 # here follow the commands you want to execute
-python3 axolotl/train.py graph.type=absorb prediction_type=log_score sampling.predictor=ancestral_x0 noise.type=cosine
+python3 axolotl/train.py load_dir=/zhome/fb/0/155603/exp_local/IPR036736_90_grouped/2025.04.13/022511

@@ -159,6 +159,7 @@ def _run(rank, world_size, config):
                                              config.training.drop_last,
                                              config.training.num_workers,
                                              distributed=True,
+                                             epoch=initial_step, # use the initial step as epoch, to make the dataloader shuffle on restart
     )
 
     # mprint(f"Length of datasets: {len(train_ds)}, {len(eval_ds)}")
@@ -178,7 +179,7 @@ def _run(rank, world_size, config):
         sampling_fn = sampling.get_sampling_fn(config, graph, noise, sampling_shape, sampling_eps, device)
 
     num_train_steps = config.training.n_iters
-    mprint(f"Starting training loop at step {initial_step}.")
+    mprint(f"Starting training loop at step {initial_step}. The step is used as a seed to shuffle the data.")
 
 
     while state['step'] < num_train_steps + 1:

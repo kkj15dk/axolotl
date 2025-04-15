@@ -1,10 +1,10 @@
-name: medium
+name: large
 type: ddit
-hidden_size: 1024
+hidden_size: 1536
 cond_dim: 128
 length: 1024
-n_blocks: 24
-n_heads: 16
+n_blocks: 36
+n_heads: 24
 scale_by_sigma: False # deprecated
 dropout: 0.1
 label_dropout: 0.1 # for classifier-free guidance (cfg)
