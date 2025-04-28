@@ -106,7 +106,7 @@ class Scheduler(abc.ABC, nn.Module):
         return (1.0 - 2 * self.eps) * self._dalpha(t)
 
     def dgamma_times_beta(self, t):
-        return - self.dalpha(t) / (1 - self.alpha(t))
+        return self.dalpha(t) / (1 - self.alpha(t))
     
 
     @abc.abstractmethod
