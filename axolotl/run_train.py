@@ -26,6 +26,7 @@ from transformers import PreTrainedTokenizerFast
 import esm
 from omegaconf import OmegaConf
 import wandb
+from typing import List
 
 torch.backends.cudnn.benchmark = True
 # torch.autograd.set_detect_anomaly(True)
@@ -273,42 +274,59 @@ def _run(rank, world_size, config):
                             global_table = current_table # workaround
 
                     if config.eval.perplexity:
-                        with torch.no_grad():
-                            # get the ESM model
-                            eval_model, alphabet = esm.pretrained.esm2_t12_35M_UR50D()
-                            eval_model = eval_model.to(device).eval()
-
-                            # convert the sequences to ESM tokens
-                            sequences = [seq.replace("[", "<cls>").replace("]", "<eos>").replace("?", "X") for seq in sequences]
-                            esm_sample = torch.cat([torch.tensor(alphabet.encode(seq)).to(device).unsqueeze(0) for seq in sequences], dim=0)
-
-                            # batch the samples
-                            n_batches = esm_sample.shape[0] // config.eval.perplexity_batch_size
-                            total_perplexity = 0
-                            for i in range(n_batches):
-
-                                # initialize the logits
-                                batch = esm_sample[i * config.eval.perplexity_batch_size:(i + 1) * config.eval.perplexity_batch_size]
-                                esm_logits = torch.zeros(batch.shape[0], batch.shape[1], len(alphabet)).to(device)
-                                
-                                # MLM, mask each token and get logits. Requires many forward passes
-                                for i in range(batch.shape[1]):
-                                    batch_masked = batch.clone()
-                                    batch_masked[:, i] = alphabet.mask_idx
-                                    batch_masked = batch_masked.to(device)
-                                    esm_logits[:, i, :] = eval_model(batch_masked)["logits"][:, i, :]
-
-                                # calculate perplexity TODO: Check if this is correct
-                                esm_logits = esm_logits.transpose(1, 2)
-                                perplexity = F.cross_entropy(esm_logits, batch, reduction="none").mean(dim=-1).exp().mean()
-                                total_perplexity += perplexity
-
-                            total_perplexity /= n_batches
-                            dist.all_reduce(total_perplexity)
-                            total_perplexity /= world_size
-                            mprint(f"Generative Perplexity at step: {step}. Perplexity: {total_perplexity:.3f}.")
-                            mlog({"generative_perplexity": total_perplexity.item()}, step=step)
-
-                            del eval_model, esm_logits
+                        perplexity = calculate_perplexity(config, sequences, device, world_size)
+                        mprint(f"Generative Perplexity at step: {step}. Perplexity: {perplexity:.3f}.")
+                        mlog({"generative_perplexity": perplexity.item()}, step=step)
 
                     dist.barrier()
+
+
+def calculate_perplexity(config, sequences: List[str], device, world_size):
+    """
+    Calculate the perplexity of the generated sequences using ESM model on a distributed setup.
+    Args:
+        config: The configuration object.
+        sequences: The generated sequences.
+        device: The device to use for computation.
+        world_size: The number of devices.
+    Returns:
+        perplexity: The calculated perplexity.
+    """
+    with torch.no_grad():
+        # get the ESM model
+        eval_model, alphabet = esm.pretrained.esm2_t12_35M_UR50D()
+        eval_model = eval_model.to(device).eval()
+
+        # convert the sequences to ESM tokens
+        sequences = [seq.replace("[", "<cls>").replace("]", "<eos>").replace("?", "X") for seq in sequences]
+        esm_sample = torch.cat([torch.tensor(alphabet.encode(seq)).to(device).unsqueeze(0) for seq in sequences], dim=0)
+
+        # batch the samples
+        n_batches = esm_sample.shape[0] // config.eval.perplexity_batch_size
+        total_perplexity = 0
+        for i in range(n_batches):
+
+            # initialize the logits
+            batch = esm_sample[i * config.eval.perplexity_batch_size:(i + 1) * config.eval.perplexity_batch_size]
+            esm_logits = torch.zeros(batch.shape[0], batch.shape[1], len(alphabet)).to(device)
+            
+            # MLM, mask each token and get logits. Requires many forward passes
+            for i in range(batch.shape[1]):
+                batch_masked = batch.clone()
+                batch_masked[:, i] = alphabet.mask_idx
+                batch_masked = batch_masked.to(device)
+                esm_logits[:, i, :] = eval_model(batch_masked)["logits"][:, i, :]
+
+            # calculate perplexity
+            esm_logits = esm_logits.transpose(1, 2)
+            perplexity = F.cross_entropy(esm_logits, batch, reduction="none").mean(dim=-1).exp().mean()
+            total_perplexity += perplexity
+
+        total_perplexity /= n_batches
+        dist.all_reduce(total_perplexity)
+        total_perplexity /= world_size
+
+        del eval_model, esm_logits
+        gc.collect()
+
+        return total_perplexity
