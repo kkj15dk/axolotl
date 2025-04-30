@@ -14,7 +14,7 @@ from omegaconf import OmegaConf, open_dict
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(config):
     ngpus = config.ngpus
-    if "load_dir" in config:
+    if config.load_dir is not None:
         work_dir = config.load_dir # might be a bad way to load, but it works
         assert os.path.exists(work_dir), f"Load dir {work_dir} does not exist"
 
