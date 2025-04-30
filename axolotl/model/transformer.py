@@ -300,8 +300,9 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
                 esigm1_log = torch.where(sigma < 0.5, torch.expm1(sigma), sigma.exp() - 1).log().to(x.dtype)[:, None, None]
                 x = x - esigm1_log - np.log(x.shape[-1] - 1) # this will be approximately averaged at 0
             
-            indices_mask = F.one_hot(indices, num_classes=self.dim).to(torch.bool)
-            x = torch.where(indices_mask, 0, x)
+            # Seems to maybe stabilize uniform training. But not sure if this is the right way to do it.
+            # indices_mask = F.one_hot(indices, num_classes=self.dim).to(torch.bool)
+            # x = torch.where(indices_mask, 0, x)
         
         elif self.prediction_type == 'x0':
             if self.absorb:

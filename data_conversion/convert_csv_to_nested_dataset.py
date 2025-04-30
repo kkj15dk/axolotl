@@ -185,10 +185,5 @@ def main():
     print('Doen')
     print(dataset)
 
-    # # %%
-    # # test
-    # for i in range(3):
-    #     print(dataset['train'][i])
-
 if __name__ == '__main__':
     main()

@@ -39,7 +39,7 @@ def get_loss_fn(noise, graph: graph_lib.Graph, train, prediction_type='log_score
                 loss = (dbeta[:, None] * loss).sum(dim=-1)
 
         elif prediction_type == 'x0':
-            alpha_t1 = noise(t=0.0, alpha=True)
+            alpha_t1 = noise(t=torch.zeros((1,), device=input_ids.device), alpha=True)
             dgamma_times_alpha = noise(t, dgamma_times_alpha=True)
 
             logits_fn = mutils.get_output_fn(model, train=train, exponentiate=False)
