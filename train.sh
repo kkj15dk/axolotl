@@ -30,4 +30,4 @@ module load python3/3.13.0
 source .venv/bin/activate
 
 # here follow the commands you want to execute
-python3 axolotl/train.py model=small prediction_type=x0 sampling.predictor=ancestral_x0
+python3 axolotl/train.py load_dir=/zhome/fb/0/155603/exp_local/UniRef50_grouped/2025.04.30/205511

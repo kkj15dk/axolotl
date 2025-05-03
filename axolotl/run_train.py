@@ -80,9 +80,13 @@ def _run(rank, world_size, config):
             run = wandb.init(
                 entity=config.wandb.entity,
                 project=config.wandb.project,
-                config=OmegaConf.to_container(config)
+                config=OmegaConf.to_container(config),
+                id=config.wandb.id,
+                name=config.wandb.name,
             )
             logger.info(f"wandb initiated with run id: {run.id} and run name: {run.name}")
+            config.wandb.id = run.id
+            config.wandb.name = run.name
             global_table = wandb.Table(columns=["step", "id", "label", "cfg_w", "sampling_steps", "sequence"]) # workaround. TODO: See if the issue gets fixed https://github.com/wandb/wandb/issues/2981
 
     def mprint(msg):
