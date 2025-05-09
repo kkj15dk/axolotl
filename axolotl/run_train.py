@@ -81,8 +81,9 @@ def _run(rank, world_size, config):
                 entity=config.wandb.entity,
                 project=config.wandb.project,
                 config=OmegaConf.to_container(config),
-                id=config.wandb.id,
-                name=config.wandb.name,
+                id=config.wandb.id or None,
+                name=config.wandb.name or None,
+                resume='must' if config.wandb.id is not None else None,
             )
             logger.info(f"wandb initiated with run id: {run.id} and run name: {run.name}")
             config.wandb.id = run.id
