@@ -106,4 +106,4 @@ hydra:
     # gpus_per_node: ${ngpus}
     # constraint: null
 
-load_dir: /zhome/fb/0/155603/exp_local/UniRef50_grouped/2025.04.28/160349 # to be able to load a checkpoint
+load_dir: null # to be able to load a checkpoint
