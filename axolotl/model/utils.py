@@ -14,7 +14,7 @@ def get_model_fn(model, train=False):
         A model function.
     """
 
-    def model_fn(x, t, label, sigma):
+    def model_fn(x, t, label, sigma, x1):
         """Compute the output of the score-based model.
 
         Args:
@@ -32,7 +32,7 @@ def get_model_fn(model, train=False):
             model.eval()
         
             # otherwise output the raw values (we handle mlm training in losses.py)
-        return model(x, t, label, sigma)
+        return model(x, t, label, sigma, x1)
 
     return model_fn
 
@@ -42,7 +42,7 @@ def get_output_fn(model, train=False, exponentiate=False, use_cfg=False, num_lab
     model_fn = get_model_fn(model, train=train)
 
     with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-        def output_fn(x, t, label, sigma=None): # can optionally pass in sigma for SEDD absorb
+        def output_fn(x, t, label, sigma=None, x1=None): # can optionally pass in sigma for SEDD absorb, and x1 for flow
 
             if use_cfg: # use classifier-free guidance for sampling
                 assert not train, "Must be sampling when using cfg"
@@ -51,10 +51,12 @@ def get_output_fn(model, train=False, exponentiate=False, use_cfg=False, num_lab
                 t = torch.cat([t, t], dim=0)
                 if sigma is not None:
                     sigma = torch.cat([sigma, sigma], dim=0)
+                if x1 is not None:
+                    x1 = torch.cat([x1, x1], dim=0)
                 uncond = torch.ones_like(label, dtype=torch.long) * num_labels # assume that the uncond label is the last label
                 label = torch.cat([label, uncond], dim=0)
 
-            output = model_fn(x, t, label, sigma)
+            output = model_fn(x, t, label, sigma, x1)
             
             if exponentiate:
                 # when sampling return true score (not log used for training)
