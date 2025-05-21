@@ -13,6 +13,8 @@ def get_graph(config, device):
         return Uniform(config.tokens)
     elif config.graph.type == "absorb":
         return Absorbing(config.tokens)
+    elif config.graph.type == "flow":
+        return Absorbing(config.tokens, flow=True)
     else:
         raise ValueError(f"Graph {config.graph.type} not valid")
 
@@ -39,6 +41,10 @@ class Graph(abc.ABC):
         """
         Whether input {dim - 1} is an absorbing state (used for denoising to always remove the mask).
         """
+        pass
+
+    @property
+    def flow(self):
         pass
 
 
@@ -147,6 +153,9 @@ class Uniform(Graph):
     
     @property
     def absorb(self):
+        return False
+    
+    def flow(self):
         return False
 
     def rate(self, i):
@@ -276,9 +285,10 @@ class Uniform(Graph):
         return loss
 
 class Absorbing(Graph):
-    def __init__(self, dim):
+    def __init__(self, dim, flow=False):
         super().__init__()
         self._vocab_size = dim # vocab size without absorbing state
+        self._flow = flow
 
     @property
     def vocab_size(self):
@@ -291,6 +301,10 @@ class Absorbing(Graph):
     @property
     def absorb(self):
         return True
+    
+    @property
+    def flow(self):
+        return self._flow
 
     def rate(self, i):
         # edge = - F.one_hot(i, num_classes=self.dim)
@@ -330,6 +344,9 @@ class Absorbing(Graph):
 
     def sample_limit(self, *batch_dims):
         return (self.dim - 1) * torch.ones(*batch_dims, dtype=torch.int64)
+    
+    def sample_x1(self, x):
+        return torch.randint_like(x, self.dim - 1)
 
     def score_entropy(self, log_score, beta, x, x0):
         ebetam1 = torch.where(
@@ -398,6 +415,7 @@ class Absorbing(Graph):
         neg_cross_entropy = torch.where(one_hot_x0.to(dtype=torch.bool), log_p, 0) # to avoid nans when with -inf * 0
         neg_cross_entropy = torch.sum(neg_cross_entropy, dim=-1)
 
+        # delta x_t, x_1 or delta x_t, e_m (really just a delta function for tokens that have not transitioned)
         mask = (x == self.vocab_size)
         neg_cross_entropy = torch.where(mask, dgamma_times_alpha * neg_cross_entropy, 0) # to avoid nans when with -inf * 0
 
@@ -408,7 +426,7 @@ class Absorbing(Graph):
     
     def x0_entropy(self, logits, alpha_t1, dgamma_times_alpha, x, x0):
 
-        # reconsuction loss:
+        # reconstruction loss:
         loss_recon = self.recon_loss(alpha_t1) # int
 
         # latent loss:

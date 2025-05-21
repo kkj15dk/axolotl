@@ -24,6 +24,10 @@ def get_loss_fn(noise, graph: graph_lib.Graph, train, prediction_type='log_score
         beta = noise(t, beta=True)
 
         perturbed_batch = graph.sample_transition(input_ids, beta[:, None]) # should probably change to alpha-based
+        x1 = None
+        if graph.absorb:
+            if graph.flow:
+                x1 = graph.sample_x1(input_ids)
 
         if prediction_type == 'log_score':
             dbeta = noise(t, dbeta=True)
@@ -46,6 +50,15 @@ def get_loss_fn(noise, graph: graph_lib.Graph, train, prediction_type='log_score
             logits = logits_fn(perturbed_batch, t, label)
 
             loss = graph.x0_entropy(logits, alpha_t1, dgamma_times_alpha[:, None], perturbed_batch, input_ids) # loss shape: (B, j1)
+
+        elif prediction_type == 'x0_flow':
+            alpha_t1 = noise(t=torch.zeros((1,), device=input_ids.device), alpha=True)
+            dgamma_times_alpha = noise(t, dgamma_times_alpha=True)
+
+            logits_fn = mutils.get_output_fn(model, train=train, exponentiate=False)
+            logits = logits_fn(perturbed_batch, t, label, sigma=None, x1=x1)
+
+            loss = graph.x0_entropy(logits, alpha_t1, dgamma_times_alpha[:, None], perturbed_batch, input_ids, x1) # loss shape: (B, j1)
         
         else:
             raise NotImplementedError(f"Prediction type {prediction_type} not implemented yet!")

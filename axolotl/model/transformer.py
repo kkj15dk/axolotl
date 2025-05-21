@@ -256,6 +256,10 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
         self.config = config
 
         self.absorb: bool = config.graph.type == "absorb"
+        self.flow: bool = config.graph.type == "flow"
+        if self.flow:
+            self.absorb = True
+
         self.prediction_type = config.prediction_type # 'log_score' or 'x0'
         self.dim: int = config.tokens + (1 if self.absorb else 0)
         self.num_labels: int = config.num_labels
@@ -273,9 +277,20 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
         self.scale_by_sigma = config.model.scale_by_sigma
 
 
-    def forward(self, indices, t, label, sigma=None): # sigma is only used for SEDD absorb
+    def forward(self, indices, t, label, sigma=None, x1=None): # sigma is only used for SEDD absorb
 
-        x: torch.Tensor = self.vocab_embed(indices)
+        # convert the absorb tokens to uniform looking. This is a hack to make it work for now.
+        # Input indices look like uniform diffusion, but we still ahve indices, which have the absorb tokens.
+        if self.flow:
+            assert self.absorb, "Flow is only supported for absorb mode" # TODO: this is a hack to make it work for now
+            assert self.prediction_type == 'x0', "Flow is only supported for x0 prediction type" # TODO: this is a hack to make it work for now
+            if x1 is None:
+                x1 = torch.randint_like(indices, 0, self.dim - 1)
+            input_indices = torch.where(indices == self.dim - 1, x1, indices)
+        else:
+            input_indices = indices
+        
+        x: torch.Tensor = self.vocab_embed(input_indices)
 
         time_embed = self.t_embed(t)
         label_embed = self.label_embed(label)
@@ -301,9 +316,17 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
             # x = torch.where(indices_mask, 0, x)
         
         elif self.prediction_type == 'x0':
+            # Make the last dim -inf for the absorb token
             if self.absorb:
-                indices_mask = F.one_hot(indices, num_classes=self.dim).to(torch.bool)
+                # ## Old implementation
+                # indices_mask = F.one_hot(indices, num_classes=self.dim).to(torch.bool)
+                # x = torch.where(indices_mask, -torch.inf, x)
+                # ##
+
+                masking_state = torch.ones_like(indices) * self.dim
+                indices_mask = F.one_hot(masking_state, num_classes=self.dim).to(torch.bool)
                 x = torch.where(indices_mask, -torch.inf, x)
+                
             elif not self.absorb:
                 pass
         else:

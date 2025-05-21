@@ -164,12 +164,12 @@ class AnalyticPredictor(Predictor):
 
 @register_predictor(name="ancestral_x0")
 class AncestralPredictor(Predictor):
-    def update_fn(self, logits_fn, x, t, step_size, label, cfg_w, use_cfg=False):
+    def update_fn(self, logits_fn, x, t, step_size, label, cfg_w, use_cfg=False, x1=None):
         alpha_t = self.noise(t, alpha=True)
         alpha_s = self.noise(t - step_size, alpha=True)
         unmask_prob = ((alpha_s - alpha_t) / (1 - alpha_t)).unsqueeze(-1).unsqueeze(-1) # (B, 1, 1)
 
-        x0_logits = logits_fn(x, t, label)
+        x0_logits = logits_fn(x, t, label, sigma=None, x1=x1)
         if use_cfg:
             x0_logits = classifier_free_guidance(x0_logits, cfg_w) # TODO: Should classifier free guidance be applied to the logits or the probabilities? - It's probably not the probabilities, as this can make negative probabilities
         x0_prediction = F.softmax(x0_logits, dim=-1)
@@ -192,13 +192,15 @@ class Denoiser:
         self.noise = noise
         self.prediction_type = prediction_type
 
-    def update_fn(self, output_fn, x, t, label, cfg_w, use_cfg=False):
+    def update_fn(self, output_fn, x, t, label, cfg_w, use_cfg=False, x1=None):
         beta = self.noise(t, beta=True)
 
         if self.prediction_type == 'log_score':
             output = output_fn(x, t, label, beta)
         elif self.prediction_type == 'x0':
             output = output_fn(x, t, label)
+        elif self.prediction_type == 'x0_flow':
+            output = output_fn(x, t, label, sigma=None, x1=x1)
         else:
             raise ValueError(f"Invalid prediction type: {self.prediction_type}")
 
@@ -267,7 +269,7 @@ def get_pc_sampler(graph,
                    prediction_type: str=None,
                    print_intermediates: bool=False,
 ):
-    if prediction_type == 'x0':
+    if prediction_type in ['x0', 'x0_flow']:
         assert predictor == 'ancestral_x0', "Prediction type x0 requires the predictor to be ancestral_x0"
     elif prediction_type == 'log_score':
         assert predictor in ['euler_score', 'analytic_score'], "Prediction type log_score requires the predictor to be euler_score or analytic_score"
@@ -319,14 +321,20 @@ def get_pc_sampler(graph,
                     assert isinstance(cfg_w, float), f'cfg weight must be a float, a list of floats, or "testing", got {cfg_w}'
                     cfg_w = cfg_w * torch.ones(batch_size, device=device)
 
-        if prediction_type == 'x0':
+        if prediction_type in ['x0', 'x0_flow']:
             sampling_output_fn = mutils.get_output_fn(model, train=False, exponentiate=False, use_cfg=use_cfg, num_labels=num_labels)
         elif prediction_type == 'log_score':
             sampling_output_fn = mutils.get_output_fn(model, train=False, exponentiate=True, use_cfg=use_cfg, num_labels=num_labels)
         else:
             raise ValueError(f"Invalid prediction type: {prediction_type}")
         
+        # Sample the initial state
         x = graph.sample_limit(*batch_dims).to(device)
+        x1 = None
+        if graph.absorb:
+            if graph.flow:
+                x1 = graph.sample_x1(x)
+
         if print_intermediates:
                 print(x[0])
         timesteps = torch.linspace(1, eps, steps + 1, device=device)
@@ -335,7 +343,7 @@ def get_pc_sampler(graph,
         for i in tqdm(range(steps), desc='Sampling', disable=not use_tqdm):
             t = timesteps[i] * torch.ones(x.shape[0], device=device)
             x = projector(x)
-            x = predictor.update_fn(sampling_output_fn, x, t, dt, input_label, cfg_w, use_cfg)
+            x = predictor.update_fn(sampling_output_fn, x, t, dt, input_label, cfg_w, use_cfg, x1)
             if print_intermediates:
                 print(x[0])
             
@@ -347,7 +355,7 @@ def get_pc_sampler(graph,
             # denoising step
             x = projector(x)
             t = timesteps[-1] * torch.ones(x.shape[0], device=device)
-            x = denoiser.update_fn(sampling_output_fn, x, t, input_label, cfg_w, use_cfg)
+            x = denoiser.update_fn(sampling_output_fn, x, t, input_label, cfg_w, use_cfg, x1)
             if print_intermediates:
                 print(x[0])
             
