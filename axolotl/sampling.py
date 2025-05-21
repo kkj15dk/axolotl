@@ -170,13 +170,14 @@ class AncestralPredictor(Predictor):
         unmask_prob = ((alpha_s - alpha_t) / (1 - alpha_t)).unsqueeze(-1).unsqueeze(-1) # (B, 1, 1)
 
         x0_logits = logits_fn(x, t, label, sigma=None, x1=x1)
+
         if use_cfg:
             x0_logits = classifier_free_guidance(x0_logits, cfg_w) # TODO: Should classifier free guidance be applied to the logits or the probabilities? - It's probably not the probabilities, as this can make negative probabilities
         x0_prediction = F.softmax(x0_logits, dim=-1)
 
         if self.graph.absorb:
             masking_state = F.one_hot(self.graph.vocab_size * torch.ones_like(x, dtype=torch.long, device=x0_prediction.device), num_classes=self.graph.dim) # one-hot encoding of the absorbing state
-            probs = unmask_prob * x0_prediction + (1 - unmask_prob) * masking_state 
+            probs = unmask_prob * x0_prediction + (1 - unmask_prob) * masking_state
             one_hot_x = F.one_hot(x, num_classes=self.graph.dim)
             masked = (x == self.graph.vocab_size).unsqueeze(-1)
             probs = torch.where(masked, probs, one_hot_x)
@@ -211,7 +212,7 @@ class Denoiser:
             beta = beta.unsqueeze(-1) # TODO: make it so this is not necessary
             stag_score = self.graph.staggered_score(output, beta) # beta = dbeta for the last step
             probs = stag_score * self.graph.transp_transition(x, beta)
-        elif self.prediction_type == 'x0':
+        elif self.prediction_type in ['x0', 'x0_flow']:
             probs = F.softmax(output, dim=-1)
 
             if self.graph.absorb:
@@ -336,7 +337,8 @@ def get_pc_sampler(graph,
                 x1 = graph.sample_x1(x)
 
         if print_intermediates:
-                print(x[0])
+            print(x[0])
+            print(x1[0])
         timesteps = torch.linspace(1, eps, steps + 1, device=device)
         dt = (1 - eps) / steps
 
