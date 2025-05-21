@@ -283,7 +283,7 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
         # Input indices look like uniform diffusion, but we still ahve indices, which have the absorb tokens.
         if self.flow:
             assert self.absorb, "Flow is only supported for absorb mode" # TODO: this is a hack to make it work for now
-            assert self.prediction_type == 'x0', "Flow is only supported for x0 prediction type" # TODO: this is a hack to make it work for now
+            assert self.prediction_type == 'x0_flow', "Flow is only supported for x0 prediction type" # TODO: this is a hack to make it work for now
             if x1 is None:
                 x1 = torch.randint_like(indices, 0, self.dim - 1)
             input_indices = torch.where(indices == self.dim - 1, x1, indices)
@@ -315,7 +315,7 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
             # indices_mask = F.one_hot(indices, num_classes=self.dim).to(torch.bool)
             # x = torch.where(indices_mask, 0, x)
         
-        elif self.prediction_type == 'x0':
+        elif self.prediction_type in ['x0', 'x0_flow']:
             # Make the last dim -inf for the absorb token
             if self.absorb:
                 # ## Old implementation
@@ -323,7 +323,7 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
                 # x = torch.where(indices_mask, -torch.inf, x)
                 # ##
 
-                masking_state = torch.ones_like(indices) * self.dim
+                masking_state = torch.ones_like(indices) * (self.dim - 1)
                 indices_mask = F.one_hot(masking_state, num_classes=self.dim).to(torch.bool)
                 x = torch.where(indices_mask, -torch.inf, x)
                 
