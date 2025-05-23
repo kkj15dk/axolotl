@@ -169,18 +169,24 @@ class AncestralPredictor(Predictor):
         alpha_s = self.noise(t - step_size, alpha=True)
         unmask_prob = ((alpha_s - alpha_t) / (1 - alpha_t)).unsqueeze(-1).unsqueeze(-1) # (B, 1, 1)
 
-        x0_logits = logits_fn(x, t, label, sigma=None, x1=x1)
+        x0_logits = logits_fn(x, t, label, sigma=None)
 
         if use_cfg:
             x0_logits = classifier_free_guidance(x0_logits, cfg_w) # TODO: Should classifier free guidance be applied to the logits or the probabilities? - It's probably not the probabilities, as this can make negative probabilities
         x0_prediction = F.softmax(x0_logits, dim=-1)
 
         if self.graph.absorb:
-            masking_state = F.one_hot(self.graph.vocab_size * torch.ones_like(x, dtype=torch.long, device=x0_prediction.device), num_classes=self.graph.dim) # one-hot encoding of the absorbing state
-            probs = unmask_prob * x0_prediction + (1 - unmask_prob) * masking_state
-            one_hot_x = F.one_hot(x, num_classes=self.graph.dim)
-            masked = (x == self.graph.vocab_size).unsqueeze(-1)
-            probs = torch.where(masked, probs, one_hot_x)
+            if self.graph.flow:
+                one_hot_x = F.one_hot(x, num_classes=self.graph.dim)
+                probs = unmask_prob * x0_prediction + (1 - unmask_prob) * one_hot_x
+                masked = (x == x1).unsqueeze(-1)
+                probs = torch.where(masked, probs, one_hot_x)
+            else:
+                masking_state = F.one_hot(self.graph.vocab_size * torch.ones_like(x, dtype=torch.long, device=x0_prediction.device), num_classes=self.graph.dim) # one-hot encoding of the absorbing state
+                probs = unmask_prob * x0_prediction + (1 - unmask_prob) * masking_state
+                one_hot_x = F.one_hot(x, num_classes=self.graph.dim)
+                masked = (x == self.graph.vocab_size).unsqueeze(-1)
+                probs = torch.where(masked, probs, one_hot_x)
         elif not self.graph.absorb:
             probs = unmask_prob * x0_prediction + (1 - unmask_prob) * F.one_hot(x, num_classes=self.graph.dim)
 
@@ -216,9 +222,14 @@ class Denoiser:
             probs = F.softmax(output, dim=-1)
 
             if self.graph.absorb:
-                one_hot_x = F.one_hot(x, num_classes=self.graph.dim)
-                masked = (x == self.graph.vocab_size).unsqueeze(-1)
-                probs = torch.where(masked, probs, one_hot_x)
+                if self.graph.flow:
+                    one_hot_x = F.one_hot(x, num_classes=self.graph.dim)
+                    masked = (x == x1).unsqueeze(-1)
+                    probs = torch.where(masked, probs, one_hot_x)
+                else:
+                    one_hot_x = F.one_hot(x, num_classes=self.graph.dim)
+                    masked = (x == self.graph.vocab_size).unsqueeze(-1)
+                    probs = torch.where(masked, probs, one_hot_x)
             elif not self.graph.absorb:
                 pass # no need to do anything
         else:
@@ -334,18 +345,18 @@ def get_pc_sampler(graph,
         x1 = None
         if graph.absorb:
             if graph.flow:
-                x1 = graph.sample_x1(x)
+                x = graph.sample_x1(x)
+                x1 = x
 
         if print_intermediates:
             print(x[0])
-            print(x1[0])
         timesteps = torch.linspace(1, eps, steps + 1, device=device)
         dt = (1 - eps) / steps
 
         for i in tqdm(range(steps), desc='Sampling', disable=not use_tqdm):
             t = timesteps[i] * torch.ones(x.shape[0], device=device)
             x = projector(x)
-            x = predictor.update_fn(sampling_output_fn, x, t, dt, input_label, cfg_w, use_cfg, x1)
+            x = predictor.update_fn(sampling_output_fn, x, t, dt, input_label, cfg_w, use_cfg, x1=x1)
             if print_intermediates:
                 print(x[0])
             
@@ -357,7 +368,7 @@ def get_pc_sampler(graph,
             # denoising step
             x = projector(x)
             t = timesteps[-1] * torch.ones(x.shape[0], device=device)
-            x = denoiser.update_fn(sampling_output_fn, x, t, input_label, cfg_w, use_cfg, x1)
+            x = denoiser.update_fn(sampling_output_fn, x, t, input_label, cfg_w, use_cfg, x1=x1)
             if print_intermediates:
                 print(x[0])
             
