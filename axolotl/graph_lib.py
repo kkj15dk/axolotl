@@ -396,13 +396,14 @@ class Absorbing(Graph):
         # negligible
         return 0
 
-    def diffusion_loss(self, logits, dgamma_times_alpha, x, x0):
+    def diffusion_loss(self, logits, dgamma_times_alpha, x, x0, x1):
 
         # convert to flat tensors
         if logits.is_nested:
             logits, offsets = packed_tensor_from_jagged(logits)
             x, _ = packed_tensor_from_jagged(x)
             x0, _ = packed_tensor_from_jagged(x0)
+            x1, _ = packed_tensor_from_jagged(x1)
             dgamma_times_alpha, _ = expand_using_offsets(dgamma_times_alpha, offsets)
         else:
             raise NotImplementedError("Diffusion loss not tested yet for normal, non-nested tensors")
@@ -415,8 +416,11 @@ class Absorbing(Graph):
         neg_cross_entropy = torch.where(one_hot_x0.to(dtype=torch.bool), log_p, 0) # to avoid nans when with -inf * 0
         neg_cross_entropy = torch.sum(neg_cross_entropy, dim=-1)
 
-        # delta x_t, x_1 or delta x_t, e_m (really just a delta function for tokens that have not transitioned)
-        mask = (x == self.vocab_size)
+        # delta x_t, x_1 or delta x_t, e_m
+        if self.flow:
+            mask = (x == x1) | (x == self.vocab_size)
+        else:
+            mask = (x == self.vocab_size)
         neg_cross_entropy = torch.where(mask, dgamma_times_alpha * neg_cross_entropy, 0) # to avoid nans when with -inf * 0
 
         if offsets is not None:
@@ -424,7 +428,7 @@ class Absorbing(Graph):
         
         return neg_cross_entropy
     
-    def x0_entropy(self, logits, alpha_t1, dgamma_times_alpha, x, x0):
+    def x0_entropy(self, logits, alpha_t1, dgamma_times_alpha, x, x0, x1=None):
 
         # reconstruction loss:
         loss_recon = self.recon_loss(alpha_t1) # int
@@ -433,7 +437,7 @@ class Absorbing(Graph):
         loss_prior = self.latent_loss() # 0
 
         # diffusion loss:
-        loss_diffusion = self.diffusion_loss(logits, dgamma_times_alpha, x, x0) # (B, j1)
+        loss_diffusion = self.diffusion_loss(logits, dgamma_times_alpha, x, x0, x1) # (B, j1)
 
         loss = loss_recon + loss_prior + loss_diffusion
 
