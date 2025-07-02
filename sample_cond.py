@@ -5,10 +5,10 @@ import os
 
 from transformers import PreTrainedTokenizerFast
 
-from axolotl import sampling
-from axolotl.load_model import load_model
-from axolotl.utils import float_list_or_testing
-from axolotl.visualization import plot_sequence_logo_and_create_gif
+from .axolotl import sampling
+from .axolotl.load_model import load_model
+from .axolotl.utils import float_list_or_testing
+from .axolotl.visualization import plot_sequence_logo_and_create_gif
 
 def get_args():
     parser = argparse.ArgumentParser(description="Generate some samples")
@@ -105,7 +105,7 @@ def sample_conditional(model_path: str,
     if make_x0_gif and x0_predictions is not None:
         x0_predictions_tensor = torch.stack(x0_predictions, dim=0).cpu().permute(1,0,3,2).numpy()
         for i, giftensor in enumerate(x0_predictions_tensor):
-            plot_sequence_logo_and_create_gif(giftensor, positions_per_line=64, ylim=(0, 1), dpi=100, output_gif_path=f"{output.replace('.txt', f'_x0_predictions_{i}.gif')}", png_dir="sequence_logo_pngs", num_processes=10)
+            plot_sequence_logo_and_create_gif(giftensor, positions_per_line=64, ylim=(0, 1), dpi=100, output_gif_path=f"{output.replace('.txt', f'_x0_predictions_{i}.gif')}", png_dir=f'{x0_predictions_outfolder}/sequence_logo_pngs', num_processes=10)
 
     if intermediates is not None:
         intermediates_outfile = output.replace(".txt", "_intermediates.txt")
@@ -127,6 +127,8 @@ def mask_sequence(
     if not isinstance(sequence, str):
         raise TypeError("sequence must be a string")
 
+    masked_sequence = sequence
+
     for il in masked_locs:
         if type(il) == tuple:
             masked_sequence = masked_sequence[:il[0]] + "_"*(il[1]-il[0]) + masked_sequence[il[1]:]
@@ -141,6 +143,8 @@ def mask_sequence(
     print("sequence before and after masking:")
     print(sequence)
     print(masked_sequence)
+
+    return masked_sequence
 
 
 def preprocess_masked_sequence(
