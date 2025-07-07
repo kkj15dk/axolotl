@@ -396,14 +396,14 @@ class Absorbing(Graph):
         # negligible
         return 0
 
-    def diffusion_loss(self, logits, dgamma_times_alpha, x, x0, x1):
+    def diffusion_loss(self, logits, dgamma_times_alpha, x, x0, x1=None):
 
         # convert to flat tensors
         if logits.is_nested:
             logits, offsets = packed_tensor_from_jagged(logits)
             x, _ = packed_tensor_from_jagged(x)
             x0, _ = packed_tensor_from_jagged(x0)
-            x1, _ = packed_tensor_from_jagged(x1)
+            x1, _ = packed_tensor_from_jagged(x1) if x1 is not None else (None, None)
             dgamma_times_alpha, _ = expand_using_offsets(dgamma_times_alpha, offsets)
         else:
             raise NotImplementedError("Diffusion loss not tested yet for normal, non-nested tensors")

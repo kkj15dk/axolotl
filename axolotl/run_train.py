@@ -241,7 +241,7 @@ def _run(rank, world_size, config):
 
                     ema.store(model.parameters())
                     ema.copy_to(model.parameters())
-                    sample, sampling_label, sampling_cfg_w = sampling_fn(model)
+                    sample, sampling_label, sampling_cfg_w, _, _ = sampling_fn(model)
                     ema.restore(model.parameters())
 
                     sequences = tokenizer.batch_decode(sample)
