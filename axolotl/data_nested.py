@@ -16,9 +16,6 @@ from typing import Optional, List, Union
 import torch.distributed as dist
 from torch.utils.data import Sampler
 
-import numpy as np
-import numba
-
 class CyclingDataLoader:
     """A wrapper that cycles through a DataLoader infinitely while managing epochs"""
     
