@@ -165,7 +165,9 @@ def _run(rank, world_size, config):
                                              config.training.drop_last,
                                              config.training.num_workers,
                                              distributed=True,
+                                             seed=42,
                                              epoch=initial_step, # use the initial step as epoch, to make the dataloader shuffle on restart
+                                             shuffle_each_epoch=True,
     )
 
     # mprint(f"Length of datasets: {len(train_ds)}, {len(eval_ds)}")

@@ -84,6 +84,7 @@ def get_dataloaders(train_batch_size,
                     drop_last,
                     num_workers,
                     distributed=True,
+                    seed=42, # Seed for picking the data in the clusters and making torch generators.
                     epoch=0,
                     shuffle_each_epoch=True,
 ):
@@ -111,12 +112,14 @@ def get_dataloaders(train_batch_size,
         train_sampler = SimpleDistributedBatchSampler(train_set,
                                                           max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
                                                           total_length=max_length * train_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                          seed=seed,
                                                           epoch=epoch,
                                                           drop_last=drop_last,
         )
         val_sampler = SimpleDistributedBatchSampler(valid_set, 
                                                         max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
                                                         total_length=max_length * valid_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                                                        seed=seed,
                                                         epoch=epoch,
                                                         drop_last=drop_last,
         )
@@ -124,12 +127,14 @@ def get_dataloaders(train_batch_size,
         train_sampler = SimpleBatchSampler(train_set,
                                                max_length=max_length, 
                                                total_length=max_length * train_batch_size // (ngpus * accum), 
+                                               seed=seed,
                                                epoch=epoch,
                                                drop_last=drop_last,
         )
         val_sampler = SimpleBatchSampler(valid_set, 
                                              max_length=max_length, 
                                              total_length=max_length * valid_batch_size // (ngpus * accum), 
+                                             seed=seed,
                                              epoch=epoch,
                                              drop_last=drop_last,
         )

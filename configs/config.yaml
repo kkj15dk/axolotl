@@ -20,7 +20,7 @@ prediction_type: 'x0_flow' # 'log_score', 'x0', or 'x0_flow'
 training:
   batch_size: 128
   drop_last: True
-  num_workers: 8 # number of workers for each dataloader
+  num_workers: 4 # number of workers for each dataloader
   accum: 4 # 8
   n_iters: 1300001
   snapshot_freq: 2500
