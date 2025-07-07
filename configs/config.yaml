@@ -3,25 +3,30 @@ defaults:
   - model: small
   - override hydra/launcher: basic # submitit_slurm
 
-ngpus: 1
+ngpus: 1 # number of GPUs to use
 tokens: 23 # 23 for uniform
 num_labels: 2 # prokaryotic (0), eukaryotic (1)
-prediction_type: 'x0_flow' # 'log_score', 'x0', or 'x0_flow'
+prediction_type: 'x0' # 'log_score', 'x0', or 'x0_flow'
 
 # length: 4096
 # A100 40GB
 # small => batch_size=64
 # medium => batch_size=32
 
-# A100 80GB
-# small => batch_size=32
-# medium => batch_size=8
+# # A100 80GB
+# # small => batch_size=32
+# # medium => batch_size=8
+
+# max_length: 1024
+# A100 40GB
+# small => batch_size=128
+# medium => batch_size=64
 
 training:
   batch_size: 128
   drop_last: True
   num_workers: 4 # number of workers for each dataloader
-  accum: 4 # 8
+  accum: 8
   n_iters: 1300001
   snapshot_freq: 2500
   log_freq: 50
@@ -49,12 +54,12 @@ data:
   # tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_uniform'
 
 graph:
-  type: flow # 'absorb', 'uniform' or 'flow'
+  type: absorb # 'absorb', 'uniform' or 'flow'
   file: data
   report_all: False
 
 noise:
-  type: linear # 'linear', 'cosine', or 'geometric'
+  type: cosine # 'linear', 'cosine', or 'geometric'
   eps: 1e-4
   sigma_min: 1e-4
   sigma_max: 20
