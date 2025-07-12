@@ -4,10 +4,10 @@ import argparse
 from transformers import PreTrainedTokenizerFast
 import torch.nn.functional as F
 
-from .axolotl import sampling
-from .axolotl.load_model import load_model
-from .axolotl.utils import float_list_or_testing
-from .axolotl.visualization import plot_sequence_logo_and_create_gif
+from axolotl import sampling
+from axolotl.load_model import load_model
+from axolotl.utils import float_list_or_testing
+from axolotl.visualization import plot_sequence_logo_and_create_gif
 
 from typing import List, Union
 import os

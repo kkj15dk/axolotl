@@ -233,20 +233,22 @@ class SimpleDistributedBatchSampler(Sampler):
             sequence_length = self.dataset[idx][self.length_key][cluster_idx].item()
             truncated_length = min(sequence_length, self.max_length)
             
-            # Add sample to current batch
-            batch.append(idx)
+            # Increment length
             batch_length += truncated_length
             
-            # Check if adding this sample caused overflow
-            if batch_length >= self.total_length:
+            # Check if adding this sample would cause overflow
+            if batch_length > self.total_length:
                 # Check if this batch belongs to our rank
                 if batch_count % self.num_replicas == self.rank:
                     yield batch
                 
                 # Reset for next batch
                 batch = []
-                batch_length = 0
+                batch_length = truncated_length
                 batch_count += 1
+
+            # Add sample to the batch
+            batch.append(idx)
         
         # Handle remaining batch if not empty
         if len(batch) > 0 and not self.drop_last:
@@ -262,29 +264,17 @@ class SimpleDistributedBatchSampler(Sampler):
         label_list = []
         length_sum = 0
 
-        for i in range(len(batch) - 1):
+        for x in batch:
             # Get the sample from the dataset
-            cluster_size = batch[i][self.cluster_size_key].item()
+            cluster_size = x[self.cluster_size_key].item()
             if cluster_size == 1:
                 idx = 0
             else:
                 idx = (cluster_selection_seed % cluster_size)
 
-            input_ids_list.append(maybe_truncate(batch[i]["input_ids"][idx], self.max_length, generator=g))
-            length_sum += min(batch[i][self.length_key][idx].item(), self.max_length)
-            label_list.append(batch[i]["label"][idx])
-
-        # Process the last element - calculate its cluster index properly
-        last_cluster_size = batch[-1][self.cluster_size_key].item()
-        if last_cluster_size == 1:
-            last_idx = 0
-        else:
-            last_idx = (cluster_selection_seed % last_cluster_size)
-
-        # the last input ids should be truncated to the remaining length, to not exceed the total length
-        last_length = min(self.total_length - length_sum, self.max_length)
-        input_ids_list.append(maybe_truncate(batch[-1]["input_ids"][last_idx], last_length, generator=g))
-        label_list.append(batch[-1]["label"][last_idx])
+            input_ids_list.append(maybe_truncate(x["input_ids"][idx], self.max_length, generator=g))
+            length_sum += min(x[self.length_key][idx].item(), self.max_length)
+            label_list.append(x["label"][idx])
 
         # convert to nested tensor for the model
         input_ids = torch.nested.nested_tensor(input_ids_list, layout=torch.jagged)
@@ -292,11 +282,12 @@ class SimpleDistributedBatchSampler(Sampler):
 
         return {"input_ids": input_ids, "label": label}
 
+
 class SimpleBatchSampler(Sampler):
 
     def __init__(
         self,
-        dataset, # A clustered dataset. TODO: specify format
+        dataset, # A clustered dataset TODO specify format
         max_length: int, # maximum length of each sequence in the batch, what the sequences will be truncated to
         total_length: int, # total length of the batch (total amount of tokens)
         length_key = 'length', # a list of tensors, containing the lengths of sequences in each cluster
@@ -346,18 +337,20 @@ class SimpleBatchSampler(Sampler):
             sequence_length = self.dataset[idx][self.length_key][cluster_idx].item()
             truncated_length = min(sequence_length, self.max_length)
             
-            # Add sample to current batch
-            batch.append(idx)
+            # Increment length
             batch_length += truncated_length
             
-            # Check if adding this sample caused overflow
-            if batch_length >= self.total_length:
+            # Check if adding this sample would cause overflow
+            if batch_length > self.total_length:
                 yield batch
                 
                 # Reset for next batch
                 batch = []
-                batch_length = 0
+                batch_length = truncated_length
                 batch_count += 1
+
+            # Add sample to the batch
+            batch.append(idx)
         
         # Handle remaining batch if not empty
         if len(batch) > 0 and not self.drop_last:
@@ -371,29 +364,17 @@ class SimpleBatchSampler(Sampler):
         label_list = []
         length_sum = 0
 
-        for i in range(len(batch) - 1):
+        for x in batch:
             # Get the sample from the dataset
-            cluster_size = batch[i][self.cluster_size_key].item()
+            cluster_size = x[self.cluster_size_key].item()
             if cluster_size == 1:
                 idx = 0
             else:
                 idx = (cluster_selection_seed % cluster_size)
 
-            input_ids_list.append(maybe_truncate(batch[i]["input_ids"][idx], self.max_length, generator=g))
-            length_sum += min(batch[i][self.length_key][idx].item(), self.max_length)
-            label_list.append(batch[i]["label"][idx])
-
-        # Process the last element - calculate its cluster index properly
-        last_cluster_size = batch[-1][self.cluster_size_key].item()
-        if last_cluster_size == 1:
-            last_idx = 0
-        else:
-            last_idx = (cluster_selection_seed % last_cluster_size)
-
-        # the last input ids should be truncated to the remaining length, to not exceed the total length
-        last_length = min(self.total_length - length_sum, self.max_length)
-        input_ids_list.append(maybe_truncate(batch[-1]["input_ids"][last_idx], last_length, generator=g))
-        label_list.append(batch[-1]["label"][last_idx])
+            input_ids_list.append(maybe_truncate(x["input_ids"][idx], self.max_length, generator=g))
+            length_sum += min(x[self.length_key][idx].item(), self.max_length)
+            label_list.append(x["label"][idx])
 
         # convert to nested tensor for the model
         input_ids = torch.nested.nested_tensor(input_ids_list, layout=torch.jagged)
