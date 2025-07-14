@@ -233,7 +233,7 @@ class SimpleDistributedBatchSampler(Sampler):
             sequence_length = self.dataset[idx][self.length_key][cluster_idx].item()
             truncated_length = min(sequence_length, self.max_length)
             
-            # Increment length
+            # Increment length for the batch
             batch_length += truncated_length
             
             # Check if adding this sample would cause overflow
