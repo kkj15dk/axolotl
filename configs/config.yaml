@@ -3,7 +3,7 @@ defaults:
   - model: small
   - override hydra/launcher: basic # submitit_slurm
 
-ngpus: 1 # number of GPUs to use
+ngpus: 2 # number of GPUs to use
 tokens: 23 # 23 for uniform
 num_labels: 2 # prokaryotic (0), eukaryotic (1)
 prediction_type: 'x0' # 'log_score', 'x0', or 'x0_flow'
@@ -19,14 +19,14 @@ prediction_type: 'x0' # 'log_score', 'x0', or 'x0_flow'
 
 # max_length: 1024
 # A100 40GB
-# small => batch_size=128
+# small => batch_size=32, maybe 64
 # medium => batch_size=64
 
 training:
-  batch_size: 128
+  batch_size: 512
   drop_last: True
   num_workers: 4 # number of workers for each dataloader
-  accum: 8
+  accum: 4
   n_iters: 1300001
   snapshot_freq: 2500
   log_freq: 50
