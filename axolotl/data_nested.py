@@ -23,6 +23,10 @@ class CyclingDataLoader:
     def __init__(self, dataloader: DataLoader, shuffle_each_epoch: bool = True):
         self.dataloader = dataloader
         self.shuffle_each_epoch = shuffle_each_epoch
+        try:
+            self.rank = dist.get_rank()
+        except ValueError:
+            self.rank = 0
         
     @property
     def batch_sampler(self):
@@ -47,13 +51,10 @@ class CyclingDataLoader:
             # go to next epoch
             if self.shuffle_each_epoch:
                 self.dataloader.batch_sampler.set_epoch(self.dataloader.batch_sampler.epoch + 1)
-            print("End of dataloader, restarting...")
-            print("We are now at epoch: ", self.dataloader.batch_sampler.epoch)
+            if self.rank == 0:
+                print("End of dataloader, restarting...")
+                print("We are now at epoch: ", self.dataloader.batch_sampler.epoch)
             # print("last batch: ", i, data['input_ids'].offsets())
-
-def cycle_loader(dataloader: DataLoader, shuffle_each_epoch: bool = True):
-    """Create a cycling dataloader that can be iterated infinitely"""
-    return CyclingDataLoader(dataloader, shuffle_each_epoch)
 
 
 def get_dataset(name):
@@ -138,7 +139,7 @@ def get_dataloaders(train_batch_size,
                                              drop_last=drop_last,
         )
 
-    train_loader = cycle_loader(DataLoader(
+    train_loader = CyclingDataLoader(DataLoader(
         train_set,
         # batch_size=.batch_size // (config.ngpus * .accum),
         batch_sampler=train_sampler,
@@ -150,7 +151,7 @@ def get_dataloaders(train_batch_size,
     ),
     shuffle_each_epoch=shuffle_each_epoch,  # No need to shuffle validation data
     )
-    valid_loader = cycle_loader(DataLoader(
+    valid_loader = CyclingDataLoader(DataLoader(
         valid_set,
         # batch_size=config.eval.batch_size // (config.ngpus * .accum),
         batch_sampler=val_sampler,
