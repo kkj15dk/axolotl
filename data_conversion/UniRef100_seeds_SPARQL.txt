@@ -1,0 +1,40 @@
+PREFIX taxon: <http://purl.uniprot.org/taxonomy/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX up: <http://purl.uniprot.org/core/>
+
+# Find what properties connect proteins to clusters
+SELECT DISTINCT
+  (substr(str(?cluster100), 32) AS ?cluster100id)
+  (substr(str(?kingdom), 34) AS ?kingdomid)
+  ?id100
+  ?sequence
+WHERE {
+  VALUES ?kingdom { taxon:2 taxon:2759 }
+  ?organism rdfs:subClassOf ?kingdom .
+
+  # # E. coli only - very fast, ~100-500 results
+  # VALUES ?organism { taxon:511145 }  # E. coli K-12 MG1655
+
+  ?protein a up:Protein ;
+           up:seedFor ?cluster100 ;
+           up:sequence ?SequenceClass ;
+           up:organism ?organism .
+  
+  ?SequenceClass rdf:value ?sequence .
+  
+  ?cluster100 up:identity ?id100 .
+  
+  FILTER ( ?id100 = 1 )
+  
+  OPTIONAL {
+    ?protein up:annotation ?annotation .
+    {
+      ?annotation a up:Non-adjacent_Residues_Annotation .
+    }  UNION {
+      ?annotation a up:Non-terminal_Residue_Annotation
+      }
+  }
+  FILTER(! BOUND(?annotation))
+}
+LIMIT 2000
