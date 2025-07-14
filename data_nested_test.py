@@ -46,7 +46,7 @@ def run(rank, world_size, test_batches=500, test_every_batches=50):
     # Build data iterators
     train_ds, eval_ds = data.get_dataloaders(BS,
                                             BS,
-                                            world_size,  # Use world_size instead of 1
+                                            world_size,
                                             1,
                                             '/home/kkj/axolotl/datasets/IPR036736_90_grouped/train',
                                             '/home/kkj/axolotl/datasets/IPR036736_90_grouped/valid',
