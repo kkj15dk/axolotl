@@ -1,0 +1,28 @@
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX taxon: <http://purl.uniprot.org/taxonomy/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX up: <http://purl.uniprot.org/core/>
+
+SELECT DISTINCT
+  (substr(str(?cluster50), 32) AS ?cluster50id)
+  (substr(str(?cluster90), 32) AS ?cluster90id)
+  (substr(str(?cluster100), 32) AS ?cluster100id)
+  (substr(str(?domain), 34) AS ?domainid)
+  ?sequence
+WHERE
+{
+  VALUES ?domain { taxon:2 taxon:2759 taxon:2157 }
+  ?organism rdfs:subClassOf ?domain .
+
+  ?sequenceClass a up:Sequence ;
+                 rdf:value ?sequence ;
+                 up:seedFor ?cluster100 ;
+                 up:memberOf ?cluster50 ;
+                 up:memberOf ?cluster90 ;
+           		   up:organism ?organism .
+
+  ?cluster100 up:identity "1.0"^^xsd:decimal .
+  ?cluster90 up:identity "0.9"^^xsd:decimal .
+  ?cluster50 up:identity "0.5"^^xsd:decimal .
+}
