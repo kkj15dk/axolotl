@@ -9,20 +9,25 @@ SELECT DISTINCT
   (substr(str(?cluster90), 32) AS ?cluster90id)
   (substr(str(?cluster50), 32) AS ?cluster50id)
   (substr(str(?domain), 34) AS ?domainid)
+  (substr(str(?cluster100), 42, 4) AS ?prefix)
   ?sequence
 WHERE {
   VALUES ?domain { taxon:2 taxon:2759 taxon:2157 }  
   ?organism rdfs:subClassOf ?domain .
-
+  VALUES ?organism { taxon:83333 }
+  
+  ?cluster100 a up:Cluster ;
+              up:identity "1.0"^^xsd:decimal .
+  
+  FILTER(STRSTARTS(str(?cluster100), "http://purl.uniprot.org/uniref/UniRef100_UP"))
+  
   ?SequenceClass a up:Sequence ;
             up:seedFor ?cluster100 ;
             up:memberOf ?cluster90 ;
             up:memberOf ?cluster50 ;
             rdf:value ?sequence ;
             up:organism ?organism .
-            
-  ?cluster100 up:identity "1.0"^^xsd:decimal .
+  
   ?cluster90 up:identity "0.9"^^xsd:decimal .
   ?cluster50 up:identity "0.5"^^xsd:decimal .
-
 }

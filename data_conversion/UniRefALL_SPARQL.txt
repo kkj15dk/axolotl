@@ -24,10 +24,9 @@ WHERE
                  up:memberOf ?cluster90 ;
                  up:sequenceFor ?protein .
 
-  ?cluster100 up:identity 1.0 .
-  ?cluster50 up:identity 0.5 .
-  ?cluster90 up:identity ?identity90 .
-  FILTER ( ?identity90 != 1.0 && ?identity90 != 0.5 )
+  ?cluster100 up:identity "1.0"^^xsd:decimal .
+  ?cluster90 up:identity "0.9"^^xsd:decimal .
+  ?cluster50 up:identity "0.5"^^xsd:decimal .
 
   OPTIONAL {
     ?protein up:annotation ?annotation .

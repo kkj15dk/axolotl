@@ -14,6 +14,8 @@ WHERE {
   VALUES ?domain { taxon:2 taxon:2759 taxon:2157 }  
   ?organism rdfs:subClassOf ?domain .
 
+  VALUES ?organism { taxon:83333 }
+
   ?SequenceClass a up:Sequence ;
             up:seedFor ?cluster100 ;
             up:memberOf ?cluster90 ;

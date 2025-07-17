@@ -5,36 +5,37 @@ import logging
 import json
 import os
 
+OUTPUT = '/mnt/e/UniRefALL_from100seeds'
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Define the SPARQL endpoint and query
 endpoint = "https://sparql.uniprot.org/"
 query_template = """
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 PREFIX taxon: <http://purl.uniprot.org/taxonomy/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX up: <http://purl.uniprot.org/core/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 SELECT DISTINCT
-  (substr(str(?cluster50), 32) AS ?cluster50id)
-  (substr(str(?cluster90), 32) AS ?cluster90id)
   (substr(str(?cluster100), 32) AS ?cluster100id)
+  (substr(str(?cluster90), 32) AS ?cluster90id)
+  (substr(str(?cluster50), 32) AS ?cluster50id)
   (substr(str(?domain), 34) AS ?domainid)
   ?sequence
-WHERE
-{{
+WHERE {{
   VALUES ?domain {{ taxon:2 taxon:2759 taxon:2157 }}
   ?organism rdfs:subClassOf ?domain .
-
-  ?sequenceClass a up:Sequence ;
-                 rdf:value ?sequence ;
-                 up:seedFor ?cluster100 ;
-                 up:memberOf ?cluster50 ;
-                 up:memberOf ?cluster90 ;
-           		   up:organism ?organism .
-
+  
+  ?SequenceClass a up:Sequence ;
+            up:seedFor ?cluster100 ;
+            up:memberOf ?cluster90 ;
+            up:memberOf ?cluster50 ;
+            rdf:value ?sequence ;
+            up:organism ?organism .
+  
   ?cluster100 up:identity "1.0"^^xsd:decimal .
   ?cluster90 up:identity "0.9"^^xsd:decimal .
   ?cluster50 up:identity "0.5"^^xsd:decimal .
@@ -81,7 +82,11 @@ timeout = config["timeout"]
 offset = 0
 
 # Open a file to write the results
-with open("UniRefALL_from100seeds.csv", "w") as f:
+with open(f"{OUTPUT}.csv", "w") as f:
+
+    # Write the header for the first chunk
+    f.write("cluster100id,cluster90id,cluster50id,domainid,sequence\n")
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         while True:
             futures = []
@@ -106,11 +111,9 @@ with open("UniRefALL_from100seeds.csv", "w") as f:
                     continue
                 
                 all_results_empty = False
+                
                 # Write the result to the file
-                if offset == 0:
-                    f.write(result)  # Write header for the first chunk
-                else:
-                    f.write(result.split("\n", 1)[1])  # Skip header for subsequent chunks
+                f.write(result.split("\n", 1)[1])  # Skip header for subsequent chunks
                 
             # Update offset for the next chunk
             offset += max_workers * limit
