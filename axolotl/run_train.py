@@ -41,9 +41,16 @@ def setup(rank, world_size, port):
     with open("secret.txt", "r") as f:
         os.environ['WANDB_API_KEY'] = f.read().strip()
 
+    # Set the device for the current process
+    torch.cuda.set_device(rank)
+    device = torch.device('cuda', rank)
     # initialize the process group
     dist.init_process_group(
-        "nccl", rank=rank, world_size=world_size, timeout=datetime.timedelta(minutes=30)
+        "nccl", 
+        rank=rank, 
+        world_size=world_size, 
+        timeout=datetime.timedelta(minutes=30),
+        device_id=device,
     )
 
 
@@ -60,7 +67,6 @@ def run_multiprocess(rank, world_size, config, port):
 
 
 def _run(rank, world_size, config):
-    torch.cuda.set_device(rank)
     work_dir = config.work_dir
 
     # Create directories for experimental logs
@@ -280,7 +286,7 @@ def _run(rank, world_size, config):
                             run.log({"samples": current_table}, step=step)
                             global_table = current_table # workaround
 
-                    if config.eval.perplexity:
+                    if config.eval.perplexity and step != 0:
                         perplexity = calculate_perplexity(config, sequences, device, world_size)
                         mprint(f"Generative Perplexity at step: {step}. Perplexity: {perplexity:.3f}.")
                         mlog({"generative_perplexity": perplexity.item()}, step=step)
