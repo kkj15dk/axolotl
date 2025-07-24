@@ -24,7 +24,7 @@ python sample.py --length LENGTH
 
 ## conditional
 
-To do unconditional sampling, run sample_cond.py
+To do conditional sampling, run sample_cond.py
 
 ```
 python sample_cond.py --length LENGTH --prefix PREFIX --suffix SUFFIX
