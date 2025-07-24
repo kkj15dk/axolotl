@@ -37,8 +37,8 @@ def run_multiprocess_test(rank, world_size, test_batches=500, test_every_batches
 
 def run(rank, world_size, test_batches=500, test_every_batches=50):
     """Main test function for each rank"""
-    BS = 4
-    CTX_LEN = 512
+    BS = 512
+    CTX_LEN = 1024
     expected_tokens_per_batch = BS * CTX_LEN
 
     print(f"Rank {rank}: Starting dataloader test with BS={BS}, CTX_LEN={CTX_LEN}")
@@ -135,8 +135,8 @@ def main():
     setup_distributed()
     
     # Configuration
-    world_size = 2  # Number of processes (simulating 2 GPUs)
-    test_batches = 5000  # Number of batches to test per iterator
+    world_size = 8  # Number of processes (simulating 2 GPUs)
+    test_batches = 500  # Number of batches to test per iterator
     test_every_batches = 200  # Frequency to test epoch cycling
     
     print(f"Starting multiprocess distributed dataloader test")

@@ -280,7 +280,7 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
     def forward(self, indices, t, label, sigma=None, x1=None): # sigma is only used for SEDD absorb
 
         # convert the absorb tokens to uniform looking. This is a hack to make it work for now.
-        # Input indices look like uniform diffusion, but we still ahve indices, which have the absorb tokens.
+        # Input indices look like uniform diffusion, but we still have indices, which have the absorb tokens.
         if self.flow:
             assert self.absorb, "Flow is only supported for absorb mode" # TODO: this is a hack to make it work for now
             assert self.prediction_type == 'x0_flow', "Flow is only supported for x0 prediction type" # TODO: this is a hack to make it work for now

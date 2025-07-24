@@ -39,6 +39,10 @@ training:
   t_sampling: 'uniform' # 'antithetic' or 'uniform'
 
 data:
+  name: IPR036736_90_grouped
+  train_path: /home/kkj/axolotl/datasets/IPR036736_90_grouped/train
+  valid_path: /home/kkj/axolotl/datasets/IPR036736_90_grouped/valid
+  tokenizer_path: '/home/kkj/axolotl/tokenizer/tokenizer_absorb'
   # name: IPR036736_90_grouped
   # train_path: /home/kkj/axolotl/datasets/IPR036736_90_grouped/train
   # valid_path: /home/kkj/axolotl/datasets/IPR036736_90_grouped/valid
@@ -73,9 +77,9 @@ sampling:
   label: 'random' # one of 'random', 'eukaryotic', or 'prokaryotic'. 'random' gives a mix of eukaryotic and prokaryotic labels
 
 eval:
-  batch_size: 256
+  batch_size: 8 # 256
   perplexity: True
-  perplexity_batch_size: 64
+  perplexity_batch_size: 4 # 64
 
 optim:
   weight_decay: 0
