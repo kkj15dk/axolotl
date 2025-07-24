@@ -52,6 +52,11 @@ data:
   # valid_path: /work3/s204514/datasets/UniRef50_grouped/valid
   # tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_absorb'
   # tokenizer_path: '/zhome/fb/0/155603/axolotl/tokenizer/tokenizer_uniform'
+  name: UniRef50_grouped
+  train_path: /scratch/project/eu-25-27/datasets/UniRef50_grouped/train
+  valid_path: /scratch/project/eu-25-27/datasets/UniRef50_grouped/valid
+  tokenizer_path: '/home/it4i-kkj15/axolotl/tokenizer/tokenizer_absorb'
+
 
 graph:
   type: absorb # 'absorb', 'uniform' or 'flow'
@@ -73,9 +78,9 @@ sampling:
   label: 'random' # one of 'random', 'eukaryotic', or 'prokaryotic'. 'random' gives a mix of eukaryotic and prokaryotic labels
 
 eval:
-  batch_size: 8 # 256
+  batch_size: 512
   perplexity: True
-  perplexity_batch_size: 4 # 64
+  perplexity_batch_size: 64 # OBS: Shouldn't be less than eval.batch_size // n_gpus
 
 optim:
   weight_decay: 0

@@ -28,7 +28,7 @@ from omegaconf import OmegaConf
 import wandb
 from typing import List
 
-torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = True # TODO: should probably turn off for nested jagged tensors
 # torch.autograd.set_detect_anomaly(True)
 
 
@@ -309,7 +309,11 @@ def calculate_perplexity(config, sequences: List[str], device, world_size):
         esm_sample = torch.cat([torch.tensor(alphabet.encode(seq)).to(device).unsqueeze(0) for seq in sequences], dim=0)
 
         # batch the samples
-        n_batches = esm_sample.shape[0] // config.eval.perplexity_batch_size
+        # n_batches = esm_sample.shape[0] // config.eval.perplexity_batch_size
+        n_samples = esm_sample.shape[0]
+        batch_size = min(config.eval.perplexity_batch_size, n_samples)
+        n_batches = max(1, n_samples // batch_size)  # Ensure at least 1 batch
+        
         total_perplexity = 0
         for i in range(n_batches):
 
