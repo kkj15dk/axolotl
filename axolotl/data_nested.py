@@ -87,6 +87,7 @@ def get_dataloaders(train_batch_size,
                     seed=42, # Seed for picking the data in the clusters and making torch generators.
                     epoch=0,
                     shuffle_each_epoch=True,
+                    use_unclustered_dataset=False,
 ):
     if train_batch_size % (ngpus * accum) != 0:
             raise ValueError(f"Train Batch Size {train_batch_size} is not divisible by {ngpus} gpus with accumulation {accum}.")
@@ -96,48 +97,44 @@ def get_dataloaders(train_batch_size,
     train_set = get_dataset(train_path)
     valid_set = get_dataset(valid_path)
 
-    if distributed:
-        # train_sampler = DistributedSequencePackingSampler(train_set,
-        #                                                   max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
-        #                                                   total_length=max_length * train_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
-        #                                                   epoch=epoch,
-        #                                                   drop_last=drop_last,
-        # )
-        # val_sampler = DistributedSequencePackingSampler(valid_set, 
-        #                                                 max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
-        #                                                 total_length=max_length * valid_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
-        #                                                 epoch=epoch,
-        #                                                 drop_last=drop_last,
-        # )
-        train_sampler = SimpleDistributedBatchSampler(train_set,
-                                                          max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
-                                                          total_length=max_length * train_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
-                                                          seed=seed,
-                                                          epoch=epoch,
-                                                          drop_last=drop_last,
-        )
-        val_sampler = SimpleDistributedBatchSampler(valid_set, 
-                                                        max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
-                                                        total_length=max_length * valid_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
-                                                        seed=seed,
-                                                        epoch=epoch,
-                                                        drop_last=drop_last,
-        )
+    if use_unclustered_dataset:
+        if distributed:
+            current_sampler = UnclusteredSimpleDistributedBatchSampler
+        else:
+            current_sampler = UnclusteredSimpleBatchSampler
     else:
-        train_sampler = SimpleBatchSampler(train_set,
-                                               max_length=max_length, 
-                                               total_length=max_length * train_batch_size // (ngpus * accum), 
-                                               seed=seed,
-                                               epoch=epoch,
-                                               drop_last=drop_last,
+        if distributed:
+            current_sampler = SimpleDistributedBatchSampler
+        else:
+            current_sampler = SimpleBatchSampler
+
+    # train_sampler = DistributedSequencePackingSampler(train_set,
+    #                                                   max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
+    #                                                   total_length=max_length * train_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+    #                                                   epoch=epoch,
+    #                                                   drop_last=drop_last,
+    # )
+    # val_sampler = DistributedSequencePackingSampler(valid_set, 
+    #                                                 max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
+    #                                                 total_length=max_length * valid_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+    #                                                 epoch=epoch,
+    #                                                 drop_last=drop_last,
+    # )
+    train_sampler = current_sampler(train_set,
+                            max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                            total_length=max_length * train_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                            seed=seed,
+                            epoch=epoch,
+                            drop_last=drop_last,
+    )
+    val_sampler = current_sampler(valid_set, 
+                          max_length=max_length, # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                          total_length=max_length * valid_batch_size // (ngpus * accum), # TODO: make sure this gets the right length with distributed, and make it distribute properly
+                          seed=seed,
+                          epoch=epoch,
+                          drop_last=drop_last,
         )
-        val_sampler = SimpleBatchSampler(valid_set, 
-                                             max_length=max_length, 
-                                             total_length=max_length * valid_batch_size // (ngpus * accum), 
-                                             seed=seed,
-                                             epoch=epoch,
-                                             drop_last=drop_last,
-        )
+
 
     train_loader = CyclingDataLoader(DataLoader(
         train_set,
@@ -388,7 +385,228 @@ class SimpleBatchSampler(Sampler):
         label = torch.tensor(label_list, dtype=torch.long)
 
         return {"input_ids": input_ids, "label": label}
+
+
+class UnclusteredSimpleDistributedBatchSampler(Sampler):
+
+    def __init__(
+        self,
+        dataset, # A clustered dataset TODO specify format
+        max_length: int, # maximum length of each sequence in the batch, what the sequences will be truncated to
+        total_length: int, # total length of the batch (total amount of tokens)
+        length_key = 'length', # a list of tensors, containing the lengths of sequences in each cluster
+        cluster_size_key = 'cluster_size', # a tensor of cluster sizes, where each cluster size corresponds to the number of sequences in the cluster
+        num_replicas: Optional[int] = None,
+        rank: Optional[int] = None,
+        seed: int = 0,
+        epoch: int = 0,
+        shuffle: bool = True,
+        drop_last: bool = False, # whether to drop the last batch if it is smaller than the total length
+    ):
+        # Get rank
+        if num_replicas is None:
+            if not dist.is_available():
+                raise RuntimeError("Requires distributed package to be available")
+            num_replicas = dist.get_world_size()
+        if rank is None:
+            if not dist.is_available():
+                raise RuntimeError("Requires distributed package to be available")
+            rank = dist.get_rank()
+
+        self.dataset = dataset
+        self.length_key = length_key
+        self.cluster_size_key = cluster_size_key
+        self.max_length = max_length # maximum length of each sequence in the batch, what the sequecnes will be truncated to
+        self.total_length = total_length
+
+        self.num_replicas = num_replicas
+        self.rank = rank
+        self.seed = seed
+        self.epoch = epoch
+        self.shuffle = shuffle
+        self.drop_last = drop_last
+
+        self.indices = list(range(len(dataset)))
+
+    def set_epoch(self, epoch: int):
+        self.epoch = epoch
     
+    def __iter__(self):
+        if self.shuffle:
+            g = torch.Generator().manual_seed(self.seed + self.epoch)
+            indices = torch.randperm(len(self.indices), generator=g).tolist()
+        else:
+            indices = self.indices.copy()
+
+        # # We use the seed and epoch to deterministically select one sequence from each cluster
+        # cluster_selection_seed = (self.seed + self.epoch)
+        
+        # Track batch generation for distributed processing
+        batch = []
+        batch_length = 0
+        batch_count = 0  # Global batch counter
+        
+        for idx in indices:
+            # Get cluster size and select sequence deterministically
+            # Cache the dataset item to avoid multiple lookups
+            item = self.dataset[idx]
+            # cluster_size = item[self.cluster_size_key].item()
+            # cluster_idx = cluster_selection_seed % cluster_size
+            
+            # Get the length and truncate to max_length
+            sequence_length = item[self.length_key].item()
+            truncated_length = min(sequence_length, self.max_length)
+            
+            # Check if adding this sample would cause overflow
+            new_batch_length = batch_length + truncated_length
+            
+            if new_batch_length > self.total_length and len(batch) > 0:
+                # Current batch is full, yield it if it belongs to our rank
+                if batch_count % self.num_replicas == self.rank:
+                    yield batch
+                
+                # Reset for next batch with current sample
+                batch = [idx]
+                batch_length = truncated_length
+                batch_count += 1
+            else:
+                # Add sample to current batch
+                batch.append(idx)
+                batch_length = new_batch_length
+        
+        # Handle remaining batch if not empty
+        if len(batch) > 0 and not self.drop_last:
+            # Check if this final batch belongs to our rank
+            if batch_count % self.num_replicas == self.rank:
+                yield batch
+
+    def collate_fn(self, batch):
+        g = torch.Generator().manual_seed(self.seed + self.epoch)
+        # cluster_selection_seed = (self.seed + self.epoch)
+
+        input_ids_list = []
+        label_list = []
+        length_sum = 0
+
+        for x in batch:
+            # # Get the sample from the dataset
+            # cluster_size = x[self.cluster_size_key].item()
+            # if cluster_size == 1:
+            #     idx = 0
+            # else:
+            #     idx = (cluster_selection_seed % cluster_size)
+
+            input_ids_list.append(maybe_truncate(x["input_ids"], self.max_length, generator=g))
+            length_sum += min(x[self.length_key].item(), self.max_length)
+            label_list.append(x["label"])
+
+        # convert to nested tensor for the model
+        input_ids = torch.nested.nested_tensor(input_ids_list, layout=torch.jagged)
+        label = torch.tensor(label_list, dtype=torch.long)
+
+        return {"input_ids": input_ids, "label": label}
+
+
+class UnclusteredSimpleBatchSampler(Sampler):
+
+    def __init__(
+        self,
+        dataset, # A clustered dataset TODO specify format
+        max_length: int, # maximum length of each sequence in the batch, what the sequences will be truncated to
+        total_length: int, # total length of the batch (total amount of tokens)
+        length_key = 'length', # a list of tensors, containing the lengths of sequences in each cluster
+        cluster_size_key = 'cluster_size', # a tensor of cluster sizes, where each cluster size corresponds to the number of sequences in the cluster
+        seed: int = 0,
+        epoch: int = 0,
+        shuffle: bool = True,
+        drop_last: bool = False, # whether to drop the last batch if it is smaller than the total length
+    ):
+        self.dataset = dataset
+        self.length_key = length_key
+        self.cluster_size_key = cluster_size_key
+        self.max_length = max_length # maximum length of each sequence in the batch, what the sequecnes will be truncated to
+        self.total_length = total_length
+
+        self.seed = seed
+        self.epoch = epoch
+        self.shuffle = shuffle
+        self.drop_last = drop_last
+
+        self.indices = list(range(len(dataset)))
+
+    def set_epoch(self, epoch: int):
+        self.epoch = epoch
+    
+    def __iter__(self):
+        if self.shuffle:
+            g = torch.Generator().manual_seed(self.seed + self.epoch)
+            indices = torch.randperm(len(self.indices), generator=g).tolist()
+        else:
+            indices = self.indices.copy()
+
+        # # We use the seed and epoch to deterministically select one sequence from each cluster
+        # cluster_selection_seed = (self.seed + self.epoch)
+        
+        # Track batch generation for distributed processing
+        batch = []
+        batch_length = 0
+        batch_count = 0  # Global batch counter
+        
+        for idx in indices:
+            # Get cluster size and select sequence deterministically
+            # Cache the dataset item to avoid multiple lookups
+            item = self.dataset[idx]
+            # cluster_size = item[self.cluster_size_key].item()
+            # cluster_idx = cluster_selection_seed % cluster_size
+            
+            # Get the length and truncate to max_length
+            sequence_length = item[self.length_key].item()
+            truncated_length = min(sequence_length, self.max_length)
+            
+            # Check if adding this sample would cause overflow
+            new_batch_length = batch_length + truncated_length
+            
+            if new_batch_length > self.total_length and len(batch) > 0:
+                yield batch
+                
+                # Reset for next batch with current sample
+                batch = [idx]
+                batch_length = truncated_length
+                batch_count += 1
+            else:
+                # Add sample to current batch
+                batch.append(idx)
+                batch_length = new_batch_length
+        
+        # Handle remaining batch if not empty
+        if len(batch) > 0 and not self.drop_last:
+            yield batch
+
+    def collate_fn(self, batch): # TODO: why are there a lot of batches with less than max amount of tokens?
+        g = torch.Generator().manual_seed(self.seed + self.epoch)
+        # cluster_selection_seed = (self.seed + self.epoch)
+
+        input_ids_list = []
+        label_list = []
+        length_sum = 0
+
+        for x in batch:
+            # # Get the sample from the dataset
+            # cluster_size = x[self.cluster_size_key].item()
+            # if cluster_size == 1:
+            #     idx = 0
+            # else:
+            #     idx = (cluster_selection_seed % cluster_size)
+
+            input_ids_list.append(maybe_truncate(x["input_ids"], self.max_length, generator=g))
+            length_sum += min(x[self.length_key].item(), self.max_length)
+            label_list.append(x["label"])
+
+        # convert to nested tensor for the model
+        input_ids = torch.nested.nested_tensor(input_ids_list, layout=torch.jagged)
+        label = torch.tensor(label_list, dtype=torch.long)
+
+        return {"input_ids": input_ids, "label": label}
 
 
 ### Multipack sampler
