@@ -153,11 +153,15 @@ def mask_sequence(
 
 def preprocess_masked_sequence(
     masked_sequence: str,
+    add_bos: bool = False,
+    add_eos: bool = False,
 ) -> tuple[List[int], str, int]:
     """
     Preprocess the masked sequence to create a list of input positions and string of the amino tokens to put at these positions.
     Args:
         masked_sequence (str): The sequence with masked positions represented by underscores.
+        add_bos (bool): Whether to add a beginning-of-sequence token.
+        add_eos (bool): Whether to add an end-of-sequence token.
     Returns:
         tuple: A tuple containing:
             - input_locs (List[int]): A list of indices where the sequence is not masked (i.e., where the character is not "_").
@@ -167,6 +171,10 @@ def preprocess_masked_sequence(
         
     # preprocess to get the correct input format
     input_locs = []
+    if add_bos:
+        masked_sequence = '[' + masked_sequence
+    if add_eos:
+        masked_sequence = masked_sequence + ']'
     length = len(masked_sequence)
 
     for i, c in enumerate(masked_sequence):
