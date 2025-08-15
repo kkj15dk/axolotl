@@ -43,7 +43,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Convert csv to nested dataset")
     parser.add_argument("--input_path", default='/mnt/e/uniref50_unclustered.csv', type=str)
-    parser.add_argument("--output_path", default='/mnt/e/', type=str)
+    parser.add_argument("--output_path", default='/home/kkj/protein_databases/', type=str)
     parser.add_argument("--filename_encoded", default='test_encoded', type=str)
     parser.add_argument("--filename_splits", default='UniRef50_unclustered', type=str)
     parser.add_argument("--sequence_key", default='sequence', type=str)
@@ -79,7 +79,7 @@ def main():
         print(f"Loading {input_path}")
         dataset = (
             load_dataset('csv', data_files=input_path, cache_dir=cache_dir)['train']
-            # .rename_column(' domainid', 'domain')
+            # .rename_column(' domainid', 'domainid')
             # .rename_column(' sequence', 'sequence')
             # .rename_column(' cluster90id', 'cluster90id')
             # .rename_column(' cluster100id', 'cluster100id')
