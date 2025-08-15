@@ -95,6 +95,8 @@ def _run(rank, world_size, config):
             config.wandb.id = run.id
             config.wandb.name = run.name
             global_table = wandb.Table(columns=["step", "id", "label", "cfg_w", "sampling_steps", "sequence"]) # workaround. TODO: See if the issue gets fixed https://github.com/wandb/wandb/issues/2981
+        # save the config to the work directory
+        
 
     def mprint(msg):
         if rank == 0:

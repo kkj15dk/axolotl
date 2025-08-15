@@ -31,6 +31,8 @@ def main(config):
         config.ngpus = ngpus
         config.work_dir = work_dir # doesn't seem to update the actual file
 
+    utils.save_hydra_config_to_run(config, work_dir)
+
 	# Run the training pipeline
     port = int(np.random.randint(10000, 20000))
     logger = utils.get_logger(os.path.join(work_dir, "logs"))

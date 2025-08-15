@@ -149,7 +149,7 @@ def get_dataloaders(train_batch_size,
         shuffle=(train_sampler is None),
         persistent_workers=(num_workers > 0),
     ),
-    shuffle_each_epoch=shuffle_each_epoch,  # No need to shuffle validation data
+    shuffle_each_epoch=shuffle_each_epoch,
     )
     valid_loader = CyclingDataLoader(DataLoader(
         valid_set,
@@ -161,7 +161,7 @@ def get_dataloaders(train_batch_size,
         shuffle=(val_sampler is None),
         persistent_workers=(num_workers > 0),
     ),
-    shuffle_each_epoch=shuffle_each_epoch,  # No need to shuffle validation data
+    shuffle_each_epoch=shuffle_each_epoch,  # No need to shuffle validation data?
     )
     return train_loader, valid_loader
 
