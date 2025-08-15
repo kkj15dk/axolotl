@@ -37,54 +37,6 @@ def preprocess(example: dict,
     return {'cluster_size': 1,'input_ids': input_ids, 'label': label, 'length': length}
 
 
-def stream_groupby_gen(dataset: Dataset, 
-                       id_key: str, 
-                       chunk_size=10000, 
-):
-    '''
-    Input:
-    A dataset with columns 'input_ids', 'label', and id_key. id_key is the column to group by, and will be renamed to 'id'.
-    '''
-    agg = lambda chunk: chunk.groupby('id').agg({
-        'cluster_size': 'sum',
-        'label': list, 
-        'length': list,
-        'input_ids': list,
-        })
-
-    # Tell pandas to read the data in chunks
-    chunks = dataset.rename_column(id_key, 'id').select_columns(['id', 'cluster_size', 'label', 'input_ids', 'length']).to_pandas(batched=True, batch_size=chunk_size)
-    
-    orphans = pd.DataFrame()
-
-    for chunk in tqdm(chunks, desc='Processing chunks', unit='chunk', total=len(dataset)//chunk_size):
-
-        # Add the previous orphans to the chunk
-        chunk = pd.concat((orphans, chunk))
-
-        # Determine which rows are orphans
-        last_val = chunk['id'].iloc[-1]
-        is_orphan = chunk['id'] == last_val
-
-        # Put the new orphans aside
-        chunk, orphans = chunk[~is_orphan], chunk[is_orphan]
-        # Perform the aggregation and store the results
-        chunk = agg(chunk).reset_index()
-
-        dataset = Dataset.from_pandas(chunk)
-
-        for i in range(len(chunk)):
-            yield dataset[i]
-
-    # Don't forget the remaining orphans
-    if len(orphans):
-        chunk = agg(orphans).reset_index()
-
-        dataset = Dataset.from_pandas(chunk)
-
-        for i in range(len(chunk)):
-            yield dataset[i]
-
 # %%
 # Encode the dataset
 def main():
@@ -93,7 +45,7 @@ def main():
     parser.add_argument("--input_path", default='/mnt/e/uniref50_unclustered.csv', type=str)
     parser.add_argument("--output_path", default='/mnt/e/', type=str)
     parser.add_argument("--filename_encoded", default='test_encoded', type=str)
-    parser.add_argument("--filename_grouped", default='test_grouped', type=str)
+    parser.add_argument("--filename_splits", default='UniRef50_unclustered', type=str)
     parser.add_argument("--sequence_key", default='sequence', type=str)
     parser.add_argument("--id_key", default='clusterid', type=str)
     parser.add_argument("--label_key", default='domainid', type=str)
@@ -107,7 +59,7 @@ def main():
     input_path: str = args.input_path
     output_path: str = args.output_path
     filename_encoded: str = args.filename_encoded
-    filename_grouped: str = args.filename_grouped
+    filename_splits: str = args.filename_splits
     sequence_key: str = args.sequence_key
     id_key: str = args.id_key
     label_key: str = args.label_key
@@ -151,17 +103,12 @@ def main():
     else:
         print(f"{filename_encoded} already exsists, loading it")
         dataset = load_from_disk(f'{output_path}{filename_encoded}')
-        print("Loaded dataset, starting grouping")
+        print("Loaded dataset, starting splitting")
 
     # %%
     # Group by the id column and aggregate the input_ids, labels, and lengths
-    if not os.path.exists(f'{output_path}{filename_grouped}'):
-        print(f"Grouping {filename_grouped}")
-        dataset = Dataset.from_generator(stream_groupby_gen, 
-                                        gen_kwargs={'dataset': dataset, 'id_key': id_key},
-                                        cache_dir=cache_dir,
-        ) # .with_format('numpy')
-        print("Grouping done, splitting into train/test/val, and then saving to disk")
+    if not os.path.exists(f'{output_path}{filename_splits}'):
+        print("Splitting into train/test/val, and then saving to disk")
         # Split the dataset into train and temp sets using the datasets library
         train_val_test_split = dataset.train_test_split(test_size=train_test_split_ratio, seed=42)
         train_dataset = train_val_test_split['train']
@@ -178,10 +125,10 @@ def main():
             'test': test_dataset,
         })
 
-        dataset.save_to_disk(f'{output_path}{filename_grouped}')
+        dataset.save_to_disk(f'{output_path}{filename_splits}')
     else:
-        print(f"{filename_grouped} already exisits, loading it")
-        dataset = load_from_disk(f'{output_path}{filename_grouped}')
+        print(f"{filename_splits} already exisits, loading it")
+        dataset = load_from_disk(f'{output_path}{filename_splits}')
 
 
     print('Doen')

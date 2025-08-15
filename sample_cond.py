@@ -10,6 +10,8 @@ from .axolotl.load_model import load_model
 from .axolotl.utils import float_list_or_testing
 from .axolotl.visualization import plot_sequence_logo_and_create_gif
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false" # To get rid of the warning about parallelism in tokenizers
+
 def get_args():
     parser = argparse.ArgumentParser(description="Generate some samples")
     parser.add_argument("--model_path", default="/home/kkj/axolotl/exp_local/IPR036736_90_grouped/2025.05.23/110208", type=str)
@@ -69,7 +71,7 @@ def sample_conditional(model_path: str,
     device = torch.device('cuda')
     model, graph, noise = load_model(model_path, device)
     
-    output = output + ".txt"
+    output_fasta = output + ".fasta"
 
     sampling_fn = sampling.get_pc_sampler(
         graph=graph,
@@ -93,10 +95,10 @@ def sample_conditional(model_path: str,
     samples = proj_fun(samples)
     sequences = tokenizer.batch_decode(samples)
     
-    sampling.write_samples(output=output, sequences=sequences, sampling_label=sampling_label, sampling_cfg_w=sampling_cfg_w, name=name, steps=steps)
+    sampling.write_samples(output=output_fasta, sequences=sequences, sampling_label=sampling_label, sampling_cfg_w=sampling_cfg_w, name=name, steps=steps)
     
     if x0_predictions is not None:
-        x0_predictions_outfolder = output.replace(".txt", "_x0_predictions")
+        x0_predictions_outfolder = output + "_x0_predictions"
         os.makedirs(x0_predictions_outfolder, exist_ok=True)
         for i, x0_seq in enumerate(x0_predictions):
             x0_seq = tokenizer.batch_decode(x0_seq.argmax(dim=-1), skip_special_tokens=True)
@@ -108,10 +110,12 @@ def sample_conditional(model_path: str,
             plot_sequence_logo_and_create_gif(giftensor, positions_per_line=64, ylim=(0, 1), dpi=100, output_gif_path=f"{output.replace('.txt', f'_x0_predictions_{i}.gif')}", png_dir=f'{x0_predictions_outfolder}/sequence_logo_pngs', num_processes=10)
 
     if intermediates is not None:
-        intermediates_outfile = output.replace(".txt", "_intermediates.txt")
+        intermediates_outfile = output + "_intermediates.txt"
         for i, intermediate in enumerate(intermediates):
             intermediate_seq = tokenizer.batch_decode(intermediate)
             sampling.write_samples(output=intermediates_outfile, sequences=intermediate_seq, sampling_label=sampling_label, sampling_cfg_w=sampling_cfg_w, name=name + "_intermediate", steps=i, header=False)
+
+    return sequences
 
 
 def mask_sequence(
@@ -149,11 +153,15 @@ def mask_sequence(
 
 def preprocess_masked_sequence(
     masked_sequence: str,
+    add_bos: bool = False,
+    add_eos: bool = False,
 ) -> tuple[List[int], str, int]:
     """
     Preprocess the masked sequence to create a list of input positions and string of the amino tokens to put at these positions.
     Args:
         masked_sequence (str): The sequence with masked positions represented by underscores.
+        add_bos (bool): Whether to add a beginning-of-sequence token.
+        add_eos (bool): Whether to add an end-of-sequence token.
     Returns:
         tuple: A tuple containing:
             - input_locs (List[int]): A list of indices where the sequence is not masked (i.e., where the character is not "_").
@@ -163,6 +171,10 @@ def preprocess_masked_sequence(
         
     # preprocess to get the correct input format
     input_locs = []
+    if add_bos:
+        masked_sequence = '[' + masked_sequence
+    if add_eos:
+        masked_sequence = masked_sequence + ']'
     length = len(masked_sequence)
 
     for i, c in enumerate(masked_sequence):

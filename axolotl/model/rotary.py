@@ -14,7 +14,7 @@ from torch import nn
 class Rotary(torch.nn.Module):
     def __init__(self, dim, base=10_000):
         super().__init__()
-        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
+        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim)) # (dim / 2), dim must be even
         self.register_buffer("inv_freq", inv_freq)
         self.seq_len_cached = None
         self.cos_cached = None
@@ -38,7 +38,7 @@ class Rotary(torch.nn.Module):
             self.cos_cached[:,:,2,:,:].fill_(1.)
             self.sin_cached[:,:,2,:,:].fill_(0.)
         
-        if x.is_nested:
+        if x.is_nested: # TODO: I think this can be rewritten to avoid the nested tensor ops, because it is relative encoding. The start-index should not matter, and maybe we can just apply to the entire value tensor.
 
             # Get the lengths of the nested tensor, also implicitly get the batch size
             lengths = x.offsets().diff()

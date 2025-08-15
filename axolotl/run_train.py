@@ -322,30 +322,37 @@ def calculate_perplexity(config, sequences: List[str], device, world_size):
         batch_size = min(config.eval.perplexity_batch_size, n_samples)
         n_batches = max(1, n_samples // batch_size)  # Ensure at least 1 batch
         
-        total_perplexity = 0
-        for i in range(n_batches):
+        total_nll = torch.tensor(0.0, device=device)
+        total_tokens = torch.tensor(0, device=device)
+
+        for batch_idx in range(n_batches):
 
             # initialize the logits
-            batch = esm_sample[i * config.eval.perplexity_batch_size:(i + 1) * config.eval.perplexity_batch_size]
+            start_idx = batch_idx * batch_size
+            end_idx = min((batch_idx + 1) * batch_size, n_samples)
+            batch = esm_sample[start_idx:end_idx]
+
             esm_logits = torch.zeros(batch.shape[0], batch.shape[1], len(alphabet)).to(device)
             
             # MLM, mask each token and get logits. Requires many forward passes
-            for i in range(batch.shape[1]):
+            for pos in range(batch.shape[1]):
                 batch_masked = batch.clone()
-                batch_masked[:, i] = alphabet.mask_idx
-                batch_masked = batch_masked.to(device)
-                esm_logits[:, i, :] = eval_model(batch_masked)["logits"][:, i, :]
+                batch_masked[:, pos] = alphabet.mask_idx
+                esm_logits[:, pos, :] = eval_model(batch_masked)["logits"][:, pos, :]
 
-            # calculate perplexity
+            # calculate negative log-likelihoods
             esm_logits = esm_logits.transpose(1, 2)
-            perplexity = F.cross_entropy(esm_logits, batch, reduction="none").mean(dim=-1).exp().mean()
-            total_perplexity += perplexity
+            total_nll += F.cross_entropy(esm_logits, batch, reduction="sum")
+            total_tokens += batch.shape[0] * batch.shape[1]
 
-        total_perplexity /= n_batches
-        dist.all_reduce(total_perplexity)
-        total_perplexity /= world_size
+        # reduce across all processes
+        dist.all_reduce(total_nll)
+        dist.all_reduce(total_tokens)
+
+        avg_nll = total_nll / total_tokens
+        perplexity = torch.exp(avg_nll)
 
         del eval_model, esm_logits
         gc.collect()
 
-        return total_perplexity
+        return perplexity
