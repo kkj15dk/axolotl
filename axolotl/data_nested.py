@@ -204,17 +204,15 @@ class SimpleDistributedBatchSampler(Sampler):
         self.shuffle = shuffle
         self.drop_last = drop_last
 
-        self.indices = list(range(len(dataset)))
-
     def set_epoch(self, epoch: int):
         self.epoch = epoch
     
     def __iter__(self):
         if self.shuffle:
             g = torch.Generator().manual_seed(self.seed + self.epoch)
-            indices = torch.randperm(len(self.indices), generator=g).tolist()
+            indices = torch.randperm(len(self.dataset), generator=g).tolist()
         else:
-            indices = self.indices.copy()
+            indices = list(range(len(self.dataset)))
 
         # We use the seed and epoch to deterministically select one sequence from each cluster
         cluster_selection_seed = (self.seed + self.epoch)
@@ -310,17 +308,15 @@ class SimpleBatchSampler(Sampler):
         self.shuffle = shuffle
         self.drop_last = drop_last
 
-        self.indices = list(range(len(dataset)))
-
     def set_epoch(self, epoch: int):
         self.epoch = epoch
     
     def __iter__(self):
         if self.shuffle:
             g = torch.Generator().manual_seed(self.seed + self.epoch)
-            indices = torch.randperm(len(self.indices), generator=g).tolist()
+            indices = torch.randperm(len(self.dataset), generator=g).tolist()
         else:
-            indices = self.indices.copy()
+            indices = list(range(len(self.dataset)))
 
         # We use the seed and epoch to deterministically select one sequence from each cluster
         cluster_selection_seed = (self.seed + self.epoch)
@@ -426,17 +422,15 @@ class UnclusteredSimpleDistributedBatchSampler(Sampler):
         self.shuffle = shuffle
         self.drop_last = drop_last
 
-        self.indices = list(range(len(dataset)))
-
     def set_epoch(self, epoch: int):
         self.epoch = epoch
     
     def __iter__(self):
         if self.shuffle:
             g = torch.Generator().manual_seed(self.seed + self.epoch)
-            indices = torch.randperm(len(self.indices), generator=g).tolist()
+            indices = torch.randperm(len(self.dataset), generator=g).tolist()
         else:
-            indices = self.indices.copy()
+            indices = list(range(len(self.dataset)))
 
         # # We use the seed and epoch to deterministically select one sequence from each cluster
         # cluster_selection_seed = (self.seed + self.epoch)
@@ -532,17 +526,15 @@ class UnclusteredSimpleBatchSampler(Sampler):
         self.shuffle = shuffle
         self.drop_last = drop_last
 
-        self.indices = list(range(len(dataset)))
-
     def set_epoch(self, epoch: int):
         self.epoch = epoch
     
     def __iter__(self):
         if self.shuffle:
             g = torch.Generator().manual_seed(self.seed + self.epoch)
-            indices = torch.randperm(len(self.indices), generator=g).tolist()
+            indices = torch.randperm(len(self.dataset), generator=g).tolist()
         else:
-            indices = self.indices.copy()
+            indices = list(range(len(self.dataset)))
 
         # # We use the seed and epoch to deterministically select one sequence from each cluster
         # cluster_selection_seed = (self.seed + self.epoch)
