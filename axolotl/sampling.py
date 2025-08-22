@@ -90,6 +90,8 @@ def write_samples(output: str,
             elif sampling_label[i] == 1:
                 sequence_label = "eukaryotic"
             elif sampling_label[i] == 2:
+                sequence_label = "archeal"
+            elif sampling_label[i] == 3:
                 sequence_label = "none"
             else:
                 raise ValueError(f"Invalid label: {sampling_label[i]}")
@@ -306,6 +308,8 @@ def get_pc_sampler(graph,
             input_label = torch.zeros(batch_size, device=device, dtype=torch.long)
         elif label == 'eukaryotic': # eukaryotic = 1
             input_label = torch.ones(batch_size, device=device, dtype=torch.long)
+        elif label == 'archeal': # archeal = 2
+            input_label = torch.full((batch_size,), 2, device=device, dtype=torch.long)
         elif label == 'random' or label is None:
             input_label = torch.randint(0, num_labels, (batch_size,), device=device, dtype=torch.long)
         else:
