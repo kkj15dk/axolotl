@@ -25,7 +25,7 @@ prediction_type: 'x0' # 'log_score', 'x0', or 'x0_flow'
 training:
   batch_size: 256
   drop_last: True
-  num_workers: 4
+  num_workers: 1
   accum: 2 # 1 for small, 2 for medium
   n_iters: 1000001
   snapshot_freq: 2500
