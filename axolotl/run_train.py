@@ -213,8 +213,8 @@ def _run(rank, world_size, config):
         loss = train_step_fn(state, input_ids, label)
         time2 = time.time()
         times.append(time2 - time1)
-        print(f"time: {time2 - time1}")
-        print(f"avg time(5 last): {np.mean(times[-5:])}, std time: {np.std(times[-100:])}")
+        mprint(f"time: {time2 - time1}")
+        mprint(f"avg time(5 last): {np.mean(times[-5:])}, std time: {np.std(times[-100:])}")
 
         # flag to see if there was movement ie a full batch got computed
         if step != state['step']:
