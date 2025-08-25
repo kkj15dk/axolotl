@@ -19,6 +19,7 @@ def jagged_from_packed_tensor(tensor, offsets):
         max_seqlen=max_len,
     )
 
+@torch.compiler.disable(recursive=False)
 def coerce_offsets(src, tgt):
     assert torch.eq(src.offsets(), tgt.offsets()).all().item()
     assert src._ragged_idx == tgt._ragged_idx
