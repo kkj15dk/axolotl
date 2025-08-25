@@ -4,6 +4,7 @@ import os.path
 import gc
 from itertools import chain
 import random
+import time
 
 import numpy as np
 import torch
@@ -44,6 +45,7 @@ def setup(rank, world_size, port):
     # Set the device for the current process
     torch.cuda.set_device(rank)
     device = torch.device('cuda', rank)
+    torch.set_float32_matmul_precision('high')
     # initialize the process group
     dist.init_process_group(
         "nccl", 
@@ -131,6 +133,7 @@ def _run(rank, world_size, config):
     
     # build score model
     model = DiscreteDiT(config).to(device)
+    model.compile(dynamic=True, mode='default')
     model = DDP(model, device_ids=[rank], static_graph=True) #, find_unused_parameters=True)
 
     num_parameters = sum(p.numel() for p in model.parameters())
@@ -198,7 +201,7 @@ def _run(rank, world_size, config):
     num_train_steps = config.training.n_iters
     mprint(f"Starting training loop at step {initial_step}. The step is used as a seed to shuffle the data.")
 
-
+    times = []
     while state['step'] < num_train_steps + 1:
         step = state['step']
 
@@ -206,7 +209,12 @@ def _run(rank, world_size, config):
         input_ids = batch['input_ids'].to(device)
         label = batch['label'].to(device)
 
+        time1 = time.time()
         loss = train_step_fn(state, input_ids, label)
+        time2 = time.time()
+        times.append(time2 - time1)
+        print(f"time: {time2 - time1}")
+        print(f"avg time(5 last): {np.mean(times[-5:])}, std time: {np.std(times[-100:])}")
 
         # flag to see if there was movement ie a full batch got computed
         if step != state['step']:

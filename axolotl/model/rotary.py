@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import time
 
 # ## nested tensor utils
 
@@ -20,9 +21,12 @@ class Rotary(torch.nn.Module):
         self.cos_cached = None
         self.sin_cached = None
 
-    def forward(self, x, seq_dim=1):
+    def forward(self, x, seq_dim=1, max_len=None):
         if x.is_nested:
-            seq_len = x.offsets().diff().max().item()
+            if max_len is not None:
+                seq_len = max_len
+            else:
+                seq_len = x.offsets().diff().max().item()
         else:
             seq_len = x.shape[seq_dim]
             
@@ -42,10 +46,11 @@ class Rotary(torch.nn.Module):
 
             # Get the lengths of the nested tensor, also implicitly get the batch size
             lengths = x.offsets().diff()
+            batch_size = len(lengths)
 
             # Expand the cached tensors to match the batch size
-            cos_nested = self.cos_cached.expand(len(lengths), -1, -1, -1, -1).contiguous()
-            sin_nested = self.sin_cached.expand(len(lengths), -1, -1, -1, -1).contiguous()
+            cos_nested = self.cos_cached.repeat(batch_size, 1, 1, 1, 1)
+            sin_nested = self.sin_cached.repeat(batch_size, 1, 1, 1, 1)
 
             # Take the nested view of the dense tensors
             cos_nested = torch.nested.narrow(

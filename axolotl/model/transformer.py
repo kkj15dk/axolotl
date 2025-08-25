@@ -5,6 +5,11 @@ import numpy as np
 import math
 
 from einops import rearrange
+
+@torch.compiler.disable()
+def rearrange_tensor(*args, **kwargs):
+    return rearrange(*args, **kwargs)
+
 # from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func
 # from flash_attn.ops.fused_dense import FusedMLP, FusedDense
 from huggingface_hub import PyTorchModelHubMixin
@@ -16,6 +21,7 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from ..utils_nested import packed_tensor_from_jagged, jagged_from_packed_tensor, coerce_offsets, expand_using_offsets, padded_from_jagged, jagged_from_padded
 
+@torch.compiler.disable()
 def modulate(x, shift, scale):
 
     # print("x modulation", x.shape)
@@ -153,7 +159,7 @@ class DiscreteDiTBlock(nn.Module):
         self.adaLN_modulation.weight.data.zero_()
         self.adaLN_modulation.bias.data.zero_()
 
-
+    @torch.compiler.disable()
     def forward(self, x, rotary_cos_sin, c):
         batch_size, max_seq_len = x.shape[0], rotary_cos_sin[0].shape[1]
 
@@ -165,7 +171,7 @@ class DiscreteDiTBlock(nn.Module):
         # dtype0 = x.dtype
 
         qkv = self.attn_qkv(x)
-        qkv = rearrange(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
+        qkv = rearrange_tensor(qkv, 'b s (three h d) -> b s three h d', three=3, h=self.n_heads)
 
         with torch.amp.autocast('cuda', enabled=False):
             cos, sin = rotary_cos_sin
@@ -183,7 +189,7 @@ class DiscreteDiTBlock(nn.Module):
         with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
             x = F.scaled_dot_product_attention(q, k, v)
         
-        x = rearrange(x, 'b h s d -> b s (h d)')
+        x = rearrange_tensor(x, 'b h s d -> b s (h d)')
 
         # out
         x = self.attn_out(x)
@@ -296,7 +302,7 @@ class DiscreteDiT(nn.Module, PyTorchModelHubMixin):
         label_embed = self.label_embed(label)
         c = F.silu(time_embed + label_embed)
 
-        rotary_cos_sin = self.rotary_emb(x)
+        rotary_cos_sin = self.rotary_emb(x, seq_dim=1, max_len=self.config.model.length)
 
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
             for block in self.blocks:

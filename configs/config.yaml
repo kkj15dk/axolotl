@@ -85,7 +85,7 @@ sampling:
   length: 256
   noise_removal: True
   cfg: 0 # cfg_w = 0 => unconditional. cfg_w = 1 => conditional. 0 < cfg_w < 1 => interpolation. cfg_w > 1 => extrapolation. cfg_w = 'testing' => testing different cfg_w at once
-  label: 'random' # one of 'random', 'eukaryotic', or 'prokaryotic'. 'random' gives a mix of eukaryotic and prokaryotic labels
+  label: 'random' # one of 'random', 'archeal', 'eukaryotic', or 'prokaryotic'. 'random' gives a mix of labels
 
 eval:
   batch_size: 512
