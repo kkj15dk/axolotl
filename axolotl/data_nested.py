@@ -58,7 +58,7 @@ class CyclingDataLoader:
 
 
 def get_dataset(name):
-    print(f"Loading dataset from {name}")
+    # print(f"Loading dataset from {name}")
     dataset = load_from_disk(name)
     dataset = dataset.with_format('torch')
 
