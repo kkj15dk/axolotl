@@ -201,7 +201,6 @@ def _run(rank, world_size, config):
     num_train_steps = config.training.n_iters
     mprint(f"Starting training loop at step {initial_step}. The step is used as a seed to shuffle the data.")
 
-    times = []
     while state['step'] < num_train_steps + 1:
         step = state['step']
 
@@ -209,12 +208,7 @@ def _run(rank, world_size, config):
         input_ids = batch['input_ids'].to(device)
         label = batch['label'].to(device)
 
-        time1 = time.time()
         loss = train_step_fn(state, input_ids, label)
-        time2 = time.time()
-        times.append(time2 - time1)
-        mprint(f"time: {time2 - time1}")
-        mprint(f"avg time(5 last): {np.mean(times[-5:])}, std time: {np.std(times[-100:])}")
 
         # flag to see if there was movement ie a full batch got computed
         if step != state['step']:
