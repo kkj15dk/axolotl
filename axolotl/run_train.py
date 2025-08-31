@@ -133,7 +133,11 @@ def _run(rank, world_size, config):
     
     # build score model
     model = DiscreteDiT(config).to(device)
-    model.compile(dynamic=True, mode='default')
+    if config.train_lora:
+        print("Training with LoRA")
+        model = utils.setup_lora(model)
+    else:
+        model.compile(dynamic=True, mode='default')
     model = DDP(model, device_ids=[rank], static_graph=True) #, find_unused_parameters=True)
 
     num_parameters = sum(p.numel() for p in model.parameters())

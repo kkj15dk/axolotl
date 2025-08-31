@@ -16,8 +16,8 @@ def get_args():
     parser = argparse.ArgumentParser(description="Generate some samples")
     parser.add_argument("--model_path", default="/home/kkj/axolotl/exp_local/IPR036736_90_grouped/2025.05.23/110208", type=str)
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--length", type=int, default=1024) # remember to add 2 for prefix and suffix
-    parser.add_argument("--steps", type=int, default=1024)
+    parser.add_argument("--length", type=int, default=128) # remember to add 2 for prefix and suffix
+    parser.add_argument("--steps", type=int, default=16)
     parser.add_argument("--predictor", type=str, default="analytic", choices=sampling._PREDICTORS.keys())
     parser.add_argument("--denoise", type=bool, default=True)
     parser.add_argument("--cfg_w", type=float_list_or_testing, default=1.0)

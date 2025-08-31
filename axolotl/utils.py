@@ -5,6 +5,8 @@ import logging
 from omegaconf import OmegaConf, open_dict
 import argparse
 
+from peft import get_peft_model, LoraConfig, TaskType
+
 def float_list_or_testing(value):
     if value == 'testing':
         return value
@@ -65,7 +67,17 @@ def restore_checkpoint(ckpt_dir, state, device):
         return state
     else:
         loaded_state = torch.load(ckpt_dir, map_location=device, weights_only=False) # TODO safe serialization when saving, to do weights_only=True
-        state['optimizer'].load_state_dict(loaded_state['optimizer'])
+        
+        # Try to load optimizer state, but skip if parameter groups don't match
+        try:
+            state['optimizer'].load_state_dict(loaded_state['optimizer'])
+        except ValueError as e:
+            if "parameter group" in str(e):
+                logging.warning(f"Skipping optimizer state loading due to parameter group mismatch: {e}")
+                logging.warning("This is expected when switching between LoRA and full fine-tuning")
+            else:
+                raise e
+        
         state['model'].module.load_state_dict(loaded_state['model'], strict=False)
         state['ema'].load_state_dict(loaded_state['ema'])
         state['step'] = loaded_state['step']
@@ -80,3 +92,19 @@ def save_checkpoint(ckpt_dir, state):
         'step': state['step']
     }
     torch.save(saved_state, ckpt_dir)
+
+
+def setup_lora(model):
+    peft_config = LoraConfig(
+        target_modules=["attn_qkv", "attn_out", "linear"], # TODO? , 'mlp', timestep embedding, positional embedding, class embedding
+        inference_mode=False,
+        r=8,
+        lora_alpha=32,
+        lora_dropout=0.1,
+        bias='none',
+    )
+
+    peft_model = get_peft_model(model, peft_config)
+    peft_model.print_trainable_parameters()
+
+    return peft_model
