@@ -14,15 +14,15 @@ import os
 
 def get_args():
     parser = argparse.ArgumentParser(description="Generate some samples")
-    parser.add_argument("--model_path", default="/home/kkj/axolotl/exp_local/IPR036736_90_grouped/2025.04.05/144904", type=str) #/home/kkj/axolotl/exp_local/UniRef50_grouped/2025.04.30/205511", type=str)
-    parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--length", type=int, default=64)
+    parser.add_argument("--model_path", default="/mnt/e/medium", type=str) #/home/kkj/axolotl/exp_local/UniRef50_grouped/2025.04.30/205511", type=str)
+    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--length", type=int, default=256)
     parser.add_argument("--steps", type=int, default=64)
     parser.add_argument("--predictor", type=str, default="ancestral_x0", choices=sampling._PREDICTORS.keys())
     parser.add_argument("--denoise", type=bool, default=True)
     parser.add_argument("--cfg_w", type=float_list_or_testing, default=1.0)
     parser.add_argument("--label", type=str, default='random', choices=['prokaryotic', 'eukaryotic', 'random'])
-    parser.add_argument("--output", type=str, default="axolotl_samples_ACP-like")
+    parser.add_argument("--output", type=str, default="UniRef50_medium_inference")
     parser.add_argument("--name", type=str, default="sample")
     parser.add_argument("--output_x0_predictions", type=bool, default=True, help="Whether to output x0 predictions")
     parser.add_argument("--output_intermediates", type=bool, default=True, help="Whether to output intermediate samples")
@@ -51,7 +51,8 @@ def sample(model_path: str,
     device = torch.device('cuda')
     model, graph, noise = load_model(model_path, device)
     
-    output = output + ".txt"
+    output = output + "/" + "samples.txt"
+    os.makedirs(os.path.dirname(output), exist_ok=True)
 
     sampling_fn = sampling.get_pc_sampler(
         graph=graph,
@@ -85,7 +86,7 @@ def sample(model_path: str,
     if make_x0_gif and x0_predictions is not None:
         x0_predictions_tensor = torch.stack(x0_predictions, dim=0).cpu().permute(1,0,3,2).numpy()
         for i, giftensor in enumerate(x0_predictions_tensor):
-            plot_sequence_logo_and_create_gif(giftensor, positions_per_line=64, ylim=(0, 1), dpi=100, output_gif_path=f"{output.replace('.txt', f'_x0_predictions_{i}.gif')}", png_dir="sequence_logo_pngs", num_processes=10)
+            plot_sequence_logo_and_create_gif(giftensor, positions_per_line=64, ylim=(0, 1), dpi=100, output_gif_path=f"{output.replace('.txt', f'_x0_predictions_{i}.gif')}", png_dir=f"{output.replace('.txt', f'_sequence_logo_pngs_{i}')}", num_processes=10)
 
     if intermediates is not None:
         intermediates_outfile = output.replace(".txt", "_intermediates.txt")

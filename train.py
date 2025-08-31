@@ -14,6 +14,14 @@ from omegaconf import OmegaConf, open_dict
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(config):
     ngpus = config.ngpus
+    train_lora = config.train_lora
+    if train_lora:
+        use_wandb = config.wandb.use_wandb
+        data = config.data
+        training = config.training
+        eval = config.eval
+        optim = config.optim
+
     if config.load_dir is not None:
         work_dir = config.load_dir # might be a bad way to load, but it works
         assert os.path.exists(work_dir), f"Load dir {work_dir} does not exist"
@@ -30,6 +38,13 @@ def main(config):
     with open_dict(config):
         config.ngpus = ngpus
         config.work_dir = work_dir # doesn't seem to update the actual file
+        if train_lora:
+            config.train_lora = train_lora
+            config.wandb.use_wandb = use_wandb
+            config.data = data
+            config.training = training
+            config.eval = eval
+            config.optim = optim
 
     # utils.save_hydra_config_to_run(config, work_dir)
 
