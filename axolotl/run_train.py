@@ -163,7 +163,8 @@ def _run(rank, world_size, config):
 
 
     # load in state
-    state = utils.restore_checkpoint(checkpoint_meta_dir, state, device)
+    train_lora = config.train_lora or None
+    state = utils.restore_checkpoint(checkpoint_meta_dir, state, device, train_lora)
     initial_step = int(state['step'])
 
     # load in tokenizer

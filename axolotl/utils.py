@@ -60,7 +60,7 @@ def get_logger(logpath, package_files=[], displaying=True, saving=True, debug=Fa
     return logger
 
 
-def restore_checkpoint(ckpt_dir, state, device):
+def restore_checkpoint(ckpt_dir, state, device, train_lora=None):
     if not os.path.exists(ckpt_dir):
         makedirs(os.path.dirname(ckpt_dir))
         logging.warning(f"No checkpoint found at {ckpt_dir}. Returned the same state as input")
@@ -79,7 +79,18 @@ def restore_checkpoint(ckpt_dir, state, device):
                 raise e
         
         state['model'].module.load_state_dict(loaded_state['model'], strict=False)
-        state['ema'].load_state_dict(loaded_state['ema'])
+        
+        # Reinitialize EMA when using LoRA to avoid parameter mismatch
+        if train_lora:
+            logging.warning("Reinitializing EMA because LoRA training is enabled")
+            logging.warning("This ensures compatibility when switching between LoRA and full fine-tuning")
+            # Reinitialize EMA with current model parameters
+            from .model.ema import ExponentialMovingAverage
+            decay = loaded_state['ema']['decay']
+            state['ema'] = ExponentialMovingAverage(state['model'].parameters(), decay=decay)
+        else:
+            state['ema'].load_state_dict(loaded_state['ema'])
+        
         state['step'] = loaded_state['step']
         return state
 

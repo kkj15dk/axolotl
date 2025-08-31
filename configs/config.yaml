@@ -27,8 +27,8 @@ train_lora: True # False # if True, use LoRA for fine-tuning
 training:
   batch_size: 4 #256
   drop_last: True
-  num_workers: 4
-  accum: 2 # 1 for small, 2 for medium
+  num_workers: 1
+  accum: 1 # 1 for small, 2 for medium
   n_iters: 1000000
   snapshot_freq: 2500
   log_freq: 50
@@ -134,4 +134,4 @@ hydra:
     # gpus_per_node: ${ngpus}
     # constraint: null
 
-load_dir: "/mnt/e/small" # null # to be able to load a checkpoint
+load_dir: "/home/kkj/axolotl/exp_local/small" # null # to be able to load a checkpoint
