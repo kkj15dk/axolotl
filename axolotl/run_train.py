@@ -28,6 +28,7 @@ import esm
 from omegaconf import OmegaConf
 import wandb
 from typing import List
+import shutil
 
 torch.backends.cudnn.benchmark = True # TODO: should probably turn off for nested jagged tensors
 # torch.autograd.set_detect_anomaly(True)
@@ -74,6 +75,12 @@ def _run(rank, world_size, config):
     # Create directories for experimental logs
     sample_dir = os.path.join(work_dir, "samples")
     checkpoint_dir = os.path.join(work_dir, "checkpoints")
+
+    if config.train_lora:
+        #copy the meta-information to the new work_dir
+        print("Copying meta-information for LoRA training")
+        shutil.copytree(os.path.join(config.load_dir, "checkpoints-meta"), os.path.join(work_dir, "checkpoints-meta"), dirs_exist_ok=True)
+
     checkpoint_meta_dir = os.path.join(work_dir, "checkpoints-meta", "checkpoint.pth")
     if rank == 0:
         utils.makedirs(sample_dir)
