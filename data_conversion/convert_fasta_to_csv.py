@@ -16,6 +16,15 @@ def convert_fasta_to_csv(fasta_path, output_path, filename):
             clusterid = i + 1
             
             domainid = record.description.split('|Domain:')[-1]
+            if domainid == "Bacteria":
+                domainid = 2
+            elif domainid == "Eukaryota":
+                domainid = 2759
+            elif domainid == "Archaea":
+                domainid = 2157
+            else:
+                raise ValueError(f"Unknown domain: {domainid}")
+
             accession = record.id
             output_handle.write(f"{clusterid},{accession},{domainid},{record.seq}\n")
 

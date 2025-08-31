@@ -90,10 +90,10 @@ def stream_groupby_gen(dataset: Dataset,
 def main():
 
     parser = argparse.ArgumentParser(description="Convert csv to nested dataset")
-    parser.add_argument("--input_path", default='/mnt/e/uniref50_unclustered.csv', type=str)
-    parser.add_argument("--output_path", default='/mnt/e/', type=str)
-    parser.add_argument("--filename_encoded", default='test_encoded', type=str)
-    parser.add_argument("--filename_grouped", default='test_grouped', type=str)
+    parser.add_argument("--input_path", default='/home/kkj/dtu-denmark-software/ThermoBase_dataset/ThermophileProteins_clustered_50_sorted.csv', type=str)
+    parser.add_argument("--output_path", default='/home/kkj/dtu-denmark-software/ThermoBase_dataset/', type=str)
+    parser.add_argument("--filename_encoded", default='ThermophileProteins_clustered_50_sorted_encoded', type=str)
+    parser.add_argument("--filename_grouped", default='ThermophileProteins_clustered_50_sorted_grouped', type=str)
     parser.add_argument("--sequence_key", default='sequence', type=str)
     parser.add_argument("--id_key", default='clusterid', type=str)
     parser.add_argument("--label_key", default='domainid', type=str)

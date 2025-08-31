@@ -13,22 +13,35 @@ def convert_folder_to_csv(folder_path, output_path, filename):
         output_handle.write("clusterid,proteinid,domainid,sequence\n") # clusterid should be the first to be able to sort the csv file
         clusters = os.listdir(folder_path)
         print(f"Found {len(clusters)} clusters")
+
         for file in clusters:
             for record in SeqIO.parse(f"{folder_path}{file}", "fasta"):
                 clusterid = file.split('.')[0]
-                accession, domainid, name = record.id.split('|')
+                
+                domainid = record.description.split('Domain:')[-1]
+                if domainid == "Bacteria":
+                    domainid = 2
+                elif domainid == "Eukaryota":
+                    domainid = 2759
+                elif domainid == "Archaea":
+                    domainid = 2157
+                else:
+                    raise ValueError(f"Unknown domain: {domainid}")
+                accession = record.id
                 output_handle.write(f"{clusterid},{accession},{domainid},{record.seq}\n")
 
 # %%
 if __name__ == "__main__":
     
-    INPUT = '/datasets/test/'
-    OUTPUT = '/datasets/'
-    OUTFILE = 'test.csv'
+    INPUT = '/home/kkj/dtu-denmark-software/ThermoBase_dataset/ThermophileProteins_clustered_50/'
+    OUTPUT = '/home/kkj/dtu-denmark-software/ThermoBase_dataset/'
+    OUTFILE = 'ThermophileProteins_clustered_50.csv'
 
     parser = argparse.ArgumentParser(description="Convert a folder of fasta files to a csv file")
     parser.add_argument("--input", default=INPUT, type=str)
     parser.add_argument("--output", default=OUTPUT, type=str)
     parser.add_argument("--outfile", default=OUTFILE, type=str)
 
-    convert_folder_to_csv(parser.input, parser.output, parser.outfile)
+    args = parser.parse_args()
+
+    convert_folder_to_csv(args.input, args.output, args.outfile)
