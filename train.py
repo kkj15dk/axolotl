@@ -14,7 +14,6 @@ from omegaconf import OmegaConf, open_dict
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def main(config):
     ngpus = config.ngpus
-    train_lora = config.train_lora
 
     if config.load_dir is not None and config.train_lora is False:
         work_dir = config.load_dir # might be a bad way to load, but it works

@@ -78,7 +78,57 @@ def restore_checkpoint(ckpt_dir, state, device, train_lora=None):
             else:
                 raise e
         
-        state['model'].module.load_state_dict(loaded_state['model'], strict=False)
+        # Validate that all loaded parameters match the current model structure
+        model_state_dict = state['model'].module.state_dict()
+        loaded_model_state = loaded_state['model']
+        
+        # Handle LoRA model structure differences
+        if train_lora:
+            # When using LoRA, we need to map checkpoint keys to match the PEFT model structure
+            mapped_loaded_state = {}
+            for key, value in loaded_model_state.items():
+                # Map checkpoint keys to PEFT model keys
+                if key.startswith('blocks.') and '.attn_qkv.weight' in key:
+                    new_key = f"base_model.model.{key.replace('.attn_qkv.weight', '.attn_qkv.base_layer.weight')}"
+                elif key.startswith('blocks.') and '.attn_out.weight' in key:
+                    new_key = f"base_model.model.{key.replace('.attn_out.weight', '.attn_out.base_layer.weight')}"
+                elif key.startswith('output_layer.linear.weight'):
+                    new_key = f"base_model.model.{key.replace('output_layer.linear.weight', 'output_layer.linear.base_layer.weight')}"
+                elif key.startswith('output_layer.linear.bias'):
+                    new_key = f"base_model.model.{key.replace('output_layer.linear.bias', 'output_layer.linear.base_layer.bias')}"
+                else:
+                    new_key = f"base_model.model.{key}"
+                
+                if new_key in model_state_dict:
+                    if model_state_dict[new_key].shape == value.shape:
+                        mapped_loaded_state[new_key] = value
+                    else:
+                        raise ValueError(f"Shape mismatch for parameter '{key}' -> '{new_key}': "
+                                       f"current model has {model_state_dict[new_key].shape}, "
+                                       f"checkpoint has {value.shape}")
+                else:
+                    raise ValueError(f"Parameter '{key}' -> '{new_key}' exists in checkpoint but not in current model")
+            
+            loaded_model_state = mapped_loaded_state
+        
+        # Check for parameter mismatches
+        for key, value in loaded_model_state.items():
+            if key not in model_state_dict:
+                raise ValueError(f"Parameter '{key}' exists in checkpoint but not in current model")
+            if model_state_dict[key].shape != value.shape:
+                raise ValueError(f"Shape mismatch for parameter '{key}': "
+                               f"current model has {model_state_dict[key].shape}, "
+                               f"checkpoint has {value.shape}")
+        
+        for key in model_state_dict.keys():
+            if key not in loaded_model_state:
+                # Skip LoRA-specific parameters that won't be in the base checkpoint
+                if train_lora and ('lora_A' in key or 'lora_B' in key):
+                    continue
+                raise ValueError(f"Parameter '{key}' exists in current model but not in checkpoint")
+        
+        # If we get here, all parameters match - safe to load
+        state['model'].module.load_state_dict(loaded_model_state, strict=False)
         
         # Reinitialize EMA when using LoRA to avoid parameter mismatch
         if train_lora:

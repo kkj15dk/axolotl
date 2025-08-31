@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - model: medium
+  - model: small
   - override hydra/launcher: basic # submitit_slurm
 
 ngpus: 1 #8 # number of GPUs to use. 8 x A100 40GB
