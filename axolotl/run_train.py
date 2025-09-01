@@ -143,12 +143,12 @@ def _run(rank, world_size, config):
     if config.train_lora:
         print("Training with LoRA")
         model = utils.setup_lora(model)
-    else:
-        model.compile(dynamic=True, mode='default')
+    model.compile(mode='default')
     model = DDP(model, device_ids=[rank], static_graph=True) #, find_unused_parameters=True)
 
     num_parameters = sum(p.numel() for p in model.parameters())
     mprint(f"Number of parameters in the model: {num_parameters}")
+    mprint(f"Number of parameters in the model (trainable): {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
     ema = ExponentialMovingAverage(
         model.parameters(), decay=config.training.ema)
@@ -262,10 +262,18 @@ def _run(rank, world_size, config):
                     this_sample_dir = os.path.join(sample_dir, "iter_{}".format(step))
                     utils.makedirs(this_sample_dir)
 
-                    ema.store(model.parameters())
-                    ema.copy_to(model.parameters())
-                    sample, sampling_label, sampling_cfg_w, _, _ = sampling_fn(model)
-                    ema.restore(model.parameters())
+                    # For LoRA training, don't use ema
+                    if config.train_lora:
+                        # ema_params = [p for p in model.parameters() if p.requires_grad]
+                        # ema.store(ema_params)
+                        # ema.copy_to(ema_params)
+                        sample, sampling_label, sampling_cfg_w, _, _ = sampling_fn(model)
+                        # ema.restore(ema_params)
+                    else:
+                        ema.store(model.parameters())
+                        ema.copy_to(model.parameters())
+                        sample, sampling_label, sampling_cfg_w, _, _ = sampling_fn(model)
+                        ema.restore(model.parameters())
 
                     sequences = tokenizer.batch_decode(sample)
                     
