@@ -37,7 +37,7 @@ training:
   weight: standard
   snapshot_sampling: True
   snapshot_checkpoint: True
-  ema: 0.9999
+  ema: 0.5 #0.9999
   t_sampling: 'uniform' # 'antithetic' or 'uniform'
 
 data:
