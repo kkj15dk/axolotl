@@ -173,11 +173,14 @@ def _run(rank, world_size, config):
     initial_step = int(state['step'])
     if config.train_lora:
         mprint("Training with LoRA")
-        # Remake the optimizer    
+        # Remake the optimizer and scaler, and update the state dict
         optimizer = losses.get_optimizer(config, chain(model.parameters(), noise.parameters()))
         mprint(f"Optimizer: {optimizer}")
         scaler = torch.amp.GradScaler('cuda')
         mprint(f"Scaler: {scaler}")
+        # Update the state dict with the new optimizer and scaler
+        state['optimizer'] = optimizer
+        state['scaler'] = scaler
     
     # load in tokenizer
     tokenizer: PreTrainedTokenizerFast = PreTrainedTokenizerFast.from_pretrained(config.data.tokenizer_path)
