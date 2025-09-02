@@ -1,9 +1,9 @@
 defaults:
   - _self_
-  - model: small
+  - model: medium
   - override hydra/launcher: basic # submitit_slurm
 
-ngpus: 1 #8 # number of GPUs to use. 8 x A100 40GB
+ngpus: 8 #8 # number of GPUs to use. 8 x A100 40GB
 tokens: 23 # 23 for uniform
 num_labels: 3 # prokaryotic (0), eukaryotic (1), archeal (2)
 prediction_type: 'x0' # 'log_score', 'x0', or 'x0_flow'
@@ -25,10 +25,10 @@ train_lora: True # False # if True, use LoRA for fine-tuning
 # medium => batch_size=16 (just barely)
 
 training:
-  batch_size: 4 #256
+  batch_size: 256
   drop_last: True
-  num_workers: 1
-  accum: 1 # 1 for small, 2 for medium
+  num_workers: 4
+  accum: 2 # 1 for small, 2 for medium
   n_iters: 1000000
   snapshot_freq: 2500
   log_freq: 50
@@ -63,16 +63,21 @@ data:
   # valid_path: /home/kkj/protein_databases/UniRef50_unclustered/valid
   # tokenizer_path: '/home/kkj/axolotl/tokenizer/tokenizer_absorb'
   # use_unclustered_dataset: True # if True, use the dataloader meant for unclustered datasets
-  name: Thermo50
-  train_path: /home/kkj/protein_databases/ThermophileProteins_clustered_50_sorted_grouped/train
-  valid_path: /home/kkj/protein_databases/ThermophileProteins_clustered_50_sorted_grouped/valid
-  tokenizer_path: '/home/kkj/axolotl/tokenizer/tokenizer_absorb'
-  use_unclustered_dataset: False # if True, use the dataloader meant for unclustered datasets
+  # name: Thermo50
+  # train_path: /home/kkj/protein_databases/ThermophileProteins_clustered_50_sorted_grouped/train
+  # valid_path: /home/kkj/protein_databases/ThermophileProteins_clustered_50_sorted_grouped/valid
+  # tokenizer_path: '/home/kkj/axolotl/tokenizer/tokenizer_absorb'
+  # use_unclustered_dataset: False # if True, use the dataloader meant for unclustered datasets
   # name: UniRef50_unclustered
   # train_path: /scratch/project/eu-25-27/datasets/UniRef50_unclustered/train
   # valid_path: /scratch/project/eu-25-27/datasets/UniRef50_unclustered/valid
   # tokenizer_path: '/home/it4i-kkj15/axolotl/tokenizer/tokenizer_absorb'
   # use_unclustered_dataset: True # if True, use the dataloader meant for unclustered datasets
+  name: Thermo50
+  train_path: /scratch/project/eu-25-27/datasets/ThermophileProteins_clustered_50_sorted_grouped/train
+  valid_path: /scratch/project/eu-25-27/datasets/ThermophileProteins_clustered_50_sorted_grouped/valid
+  tokenizer_path: '/home/it4i-kkj15/axolotl/tokenizer/tokenizer_absorb'
+  use_unclustered_dataset: False # if True, use the dataloader meant for unclustered datasets
 
 
 graph:
@@ -95,9 +100,9 @@ sampling:
   label: 'random' # one of 'random', 'archeal', 'eukaryotic', or 'prokaryotic'. 'random' gives a mix of labels
 
 eval:
-  batch_size: 4 #512
+  batch_size: 512
   perplexity: True
-  perplexity_batch_size: 4 #64 # OBS: Shouldn't be more than eval.batch_size // n_gpus
+  perplexity_batch_size: 64 # OBS: Shouldn't be more than eval.batch_size // n_gpus
 
 optim:
   weight_decay: 0
@@ -110,7 +115,7 @@ optim:
   grad_clip: 1.
 
 wandb:
-  use_wandb: False #True
+  use_wandb: True
   entity: kkj15dk-axolotl
   project: axolotl
   name: null
@@ -118,9 +123,9 @@ wandb:
 
 hydra:
   run:
-    dir: exp_local/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
+    # dir: exp_local/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
     # dir: /work3/s204514/exp_local/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
-    # dir: /scratch/project/eu-25-27/exp_local/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
+    dir: /scratch/project/eu-25-27/exp_local/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
   sweep:
     dir: exp/${data.name}/${now:%Y.%m.%d}/${now:%H%M%S}
     subdir: ${hydra.job.num}
@@ -134,4 +139,4 @@ hydra:
     # gpus_per_node: ${ngpus}
     # constraint: null
 
-load_dir: "/home/kkj/axolotl/exp_local/small" # null # to be able to load a checkpoint
+load_dir: /scratch/project/eu-25-27/exp_local/UniRef50_unclustered/2025.08.22/113333 # "/home/kkj/axolotl/exp_local/small" # null # to be able to load a checkpoint

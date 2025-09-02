@@ -4,11 +4,11 @@
 #SBATCH --partition qgpu
 #SBATCH --gpus 8
 #SBATCH --nodes 1
-#SBATCH --time 00:30:00
+#SBATCH --time 48:00:00
 
 ml purge
 ml Python/3.13.1-GCCcore-14.2.0
 source .venv/bin/activate
 
 # here follow the commands you want to execute
-python3 axolotl/train.py wandb.use_wandb=False #load_dir=/scratch/project/eu-25-27/exp_local/UniRef50_unclustered/2025.08.22/113333
+python3 axolotl/train.py #wandb.use_wandb=False #load_dir=/scratch/project/eu-25-27/exp_local/UniRef50_unclustered/2025.08.22/113333
