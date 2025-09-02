@@ -140,15 +140,11 @@ def _run(rank, world_size, config):
     
     # build score model
     model = DiscreteDiT(config).to(device)
-    if config.train_lora:
-        print("Training with LoRA")
-        model = utils.setup_lora(model)
     model.compile(mode='default')
     model = DDP(model, device_ids=[rank], static_graph=True) #, find_unused_parameters=True)
 
     num_parameters = sum(p.numel() for p in model.parameters())
     mprint(f"Number of parameters in the model: {num_parameters}")
-    mprint(f"Number of parameters in the model (trainable): {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
     ema = ExponentialMovingAverage(
         model.parameters(), decay=config.training.ema)
@@ -171,9 +167,18 @@ def _run(rank, world_size, config):
 
     # load in state
     train_lora = config.train_lora or None
+    # Set up the state, also apply LoRA if it is indicated
     state = utils.restore_checkpoint(checkpoint_meta_dir, state, device, train_lora)
+    mprint(f"Number of parameters in the model (trainable): {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     initial_step = int(state['step'])
-
+    if config.train_lora:
+        mprint("Training with LoRA")
+        # Remake the optimizer    
+        optimizer = losses.get_optimizer(config, chain(model.parameters(), noise.parameters()))
+        mprint(f"Optimizer: {optimizer}")
+        scaler = torch.amp.GradScaler('cuda')
+        mprint(f"Scaler: {scaler}")
+    
     # load in tokenizer
     tokenizer: PreTrainedTokenizerFast = PreTrainedTokenizerFast.from_pretrained(config.data.tokenizer_path)
 
