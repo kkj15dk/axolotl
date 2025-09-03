@@ -31,8 +31,17 @@ def load_model_local(root_dir, device):
     loaded_state = torch.load(ckpt_dir, map_location=device, weights_only=False) # TODO safe serialization when saving, to do weights_only=True
 
     if config.train_lora:
+        # Apply LoRA to the model first
         score_model = utils.setup_lora(score_model)
-        score_model.load_state_dict(loaded_state['model'])
+        
+        # Load the LoRA model state with proper key mapping
+        model_state = {}
+        for key, value in loaded_state['model'].items():
+            # Map LoRA checkpoint keys to PEFT model keys
+            new_key = f"base_model.model.{key}"
+            model_state[new_key] = value
+        
+        score_model.load_state_dict(model_state, strict=False)
         return score_model, graph, noise
 
     score_model.load_state_dict(loaded_state['model'])
