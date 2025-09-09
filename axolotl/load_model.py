@@ -30,7 +30,7 @@ def load_model_local(root_dir, device):
     
     loaded_state = torch.load(ckpt_dir, map_location=device, weights_only=False) # TODO safe serialization when saving, to do weights_only=True
 
-    if config.train_lora:
+    if config.get('train_lora', False):
         # Apply LoRA to the model first
         score_model = utils.setup_lora(score_model)
         
