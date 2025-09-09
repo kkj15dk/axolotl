@@ -15,7 +15,7 @@ from omegaconf import OmegaConf, open_dict
 def main(config):
     ngpus = config.ngpus
 
-    if config.load_dir is not None and config.train_lora is False:
+    if config.load_dir is not None and getattr(config, 'train_lora', False) is False:
         work_dir = config.load_dir # might be a bad way to load, but it works
         assert os.path.exists(work_dir), f"Load dir {work_dir} does not exist"
 

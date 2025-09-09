@@ -76,7 +76,7 @@ def _run(rank, world_size, config):
     sample_dir = os.path.join(work_dir, "samples")
     checkpoint_dir = os.path.join(work_dir, "checkpoints")
 
-    if config.train_lora:
+    if getattr(config, 'train_lora', False):
         #copy the meta-information to the new work_dir
         print("Copying meta-information for LoRA training")
         shutil.copytree(os.path.join(config.load_dir, "checkpoints-meta"), os.path.join(work_dir, "checkpoints-meta"), dirs_exist_ok=True)
@@ -166,12 +166,12 @@ def _run(rank, world_size, config):
 
 
     # load in state
-    train_lora = config.train_lora or None
+    train_lora = getattr(config, 'train_lora', False)
     # Set up the state, also apply LoRA if it is indicated
     state = utils.restore_checkpoint(checkpoint_meta_dir, state, device, train_lora)
     mprint(f"Number of parameters in the model (trainable): {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     initial_step = int(state['step'])
-    if config.train_lora:
+    if getattr(config, 'train_lora', False):
         mprint("Training with LoRA")
         # Remake the optimizer and scaler, and update the state dict
         optimizer = losses.get_optimizer(config, chain(model.parameters(), noise.parameters()))
@@ -271,7 +271,7 @@ def _run(rank, world_size, config):
                     utils.makedirs(this_sample_dir)
 
                     # For LoRA training, don't use ema
-                    if config.train_lora:
+                    if getattr(config, 'train_lora', False):
                         # ema_params = [p for p in model.parameters() if p.requires_grad]
                         # ema.store(ema_params)
                         # ema.copy_to(ema_params)
