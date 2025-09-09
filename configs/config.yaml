@@ -8,7 +8,7 @@ tokens: 23 # 23 for uniform
 num_labels: 3 # prokaryotic (0), eukaryotic (1), archeal (2)
 prediction_type: 'x0' # 'log_score', 'x0', or 'x0_flow'
 
-train_lora: True # False # if True, use LoRA for fine-tuning
+train_lora: False # if True, use LoRA for fine-tuning
 
 # length: 4096
 # A100 40GB
@@ -37,7 +37,7 @@ training:
   weight: standard
   snapshot_sampling: True
   snapshot_checkpoint: True
-  ema: 0.5 #0.9999
+  ema: 0.9999
   t_sampling: 'uniform' # 'antithetic' or 'uniform'
 
 data:
@@ -68,16 +68,16 @@ data:
   # valid_path: /home/kkj/protein_databases/ThermophileProteins_clustered_50_sorted_grouped/valid
   # tokenizer_path: '/home/kkj/axolotl/tokenizer/tokenizer_absorb'
   # use_unclustered_dataset: False # if True, use the dataloader meant for unclustered datasets
-  # name: UniRef50_unclustered
-  # train_path: /scratch/project/eu-25-27/datasets/UniRef50_unclustered/train
-  # valid_path: /scratch/project/eu-25-27/datasets/UniRef50_unclustered/valid
-  # tokenizer_path: '/home/it4i-kkj15/axolotl/tokenizer/tokenizer_absorb'
-  # use_unclustered_dataset: True # if True, use the dataloader meant for unclustered datasets
-  name: Thermo50
-  train_path: /scratch/project/eu-25-27/datasets/ThermophileProteins_clustered_50_sorted_grouped/train
-  valid_path: /scratch/project/eu-25-27/datasets/ThermophileProteins_clustered_50_sorted_grouped/valid
+  name: UniRef50_unclustered
+  train_path: /scratch/project/eu-25-27/datasets/UniRef50_unclustered/train
+  valid_path: /scratch/project/eu-25-27/datasets/UniRef50_unclustered/valid
   tokenizer_path: '/home/it4i-kkj15/axolotl/tokenizer/tokenizer_absorb'
-  use_unclustered_dataset: False # if True, use the dataloader meant for unclustered datasets
+  use_unclustered_dataset: True # if True, use the dataloader meant for unclustered datasets
+  # name: Thermo50
+  # train_path: /scratch/project/eu-25-27/datasets/ThermophileProteins_clustered_50_sorted_grouped/train
+  # valid_path: /scratch/project/eu-25-27/datasets/ThermophileProteins_clustered_50_sorted_grouped/valid
+  # tokenizer_path: '/home/it4i-kkj15/axolotl/tokenizer/tokenizer_absorb'
+  # use_unclustered_dataset: False # if True, use the dataloader meant for unclustered datasets
 
 
 graph:
@@ -139,4 +139,4 @@ hydra:
     # gpus_per_node: ${ngpus}
     # constraint: null
 
-load_dir: /scratch/project/eu-25-27/exp_local/UniRef50_unclustered/2025.08.22/113333 # "/home/kkj/axolotl/exp_local/small" # null # to be able to load a checkpoint
+load_dir: /scratch/project/eu-25-27/exp_local/UniRef50_unclustered/2025.08.22/113333 #/scratch/project/eu-25-27/exp_local/Thermo50/medium_for_finetuning
