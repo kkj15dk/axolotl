@@ -1,5 +1,3 @@
-"""Training and evaluation"""
-
 import hydra
 import os
 import numpy as np
