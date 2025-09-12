@@ -7,10 +7,11 @@ This repo contains the source code for axolotl - a protein diffusion model based
 
 ### Installation
 
-Axolotl utilizes nested jagged tensors (NJTs) for training, but they are not nessecary for inference. Nested tensors need a newer nightly version of torch as of writing this (18/02/2025)
+Installationg of dependencies (preferably in a virtual environment)
 
-pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126
-
+```
+pip install -U biopython einops datasets fair-esm torch hydra-core imageio logomaker matplotlib pandas numpy numba pillow transformers wandb tqdm
+```
 
 ### Inference
 

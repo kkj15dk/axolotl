@@ -11,6 +11,7 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
+import traceback
 
 from . import (
     data_nested as data, 
@@ -70,6 +71,13 @@ def run_multiprocess(rank, world_size, config, port):
 
 def _run(rank, world_size, config):
     work_dir = config.work_dir
+
+    # Create a CPU (Gloo) process group for small/object gathers to avoid GPU/NCCL memory usage
+    try:
+        cpu_pg = dist.new_group(backend="gloo")
+    except Exception:
+        mprint("Gloo backend is not available, using default group.")
+        cpu_pg = None  # Fallback: will use default group if Gloo is unavailable
 
     # Create directories for experimental logs
     sample_dir = os.path.join(work_dir, "samples")
@@ -133,7 +141,7 @@ def _run(rank, world_size, config):
     
     # build score model
     model = DiscreteDiT(config).to(device)
-    model.compile(dynamic=True, mode='default')
+    # model.compile(mode='default')
     model = DDP(model, device_ids=[rank], static_graph=True) #, find_unused_parameters=True)
 
     num_parameters = sum(p.numel() for p in model.parameters())
@@ -250,51 +258,119 @@ def _run(rank, world_size, config):
                     this_sample_dir = os.path.join(sample_dir, "iter_{}".format(step))
                     utils.makedirs(this_sample_dir)
 
-                    ema.store(model.parameters())
-                    ema.copy_to(model.parameters())
-                    sample, sampling_label, sampling_cfg_w, _, _ = sampling_fn(model)
-                    ema.restore(model.parameters())
+                    # Try/except around generation per-rank to detect failures
+                    success = torch.tensor(1, device=device, dtype=torch.int32)
+                    err_msg = None
+                    sequences = []
+                    sampling_label = None
+                    sampling_cfg_w = None
+                    try:
+                        ema.store(model.parameters())
+                        ema.copy_to(model.parameters())
+                        sample, sampling_label, sampling_cfg_w, _, _ = sampling_fn(model)
+                        # Decode to strings on CPU
+                        sequences = tokenizer.batch_decode(sample)
+                        # Move label/cfg to CPU for CPU gathers
+                        sampling_label_cpu = sampling_label.detach().to('cpu') if isinstance(sampling_label, torch.Tensor) else sampling_label
+                        sampling_cfg_w_cpu = sampling_cfg_w.detach().to('cpu') if isinstance(sampling_cfg_w, torch.Tensor) else sampling_cfg_w
+                    except Exception as e:
+                        success.fill_(0)
+                        # Print directly from each rank so errors on non-zero ranks are visible in logs
+                        print(f"[rank {rank}] Generation error: {repr(e)}\n{traceback.format_exc()}", flush=True)
+                        err_msg = f"{repr(e)}\n{traceback.format_exc()}"
+                    finally:
+                        # Always restore EMA params
+                        ema.restore(model.parameters())
+                        # Free GPU memory from sampling outputs as soon as possible
+                        try:
+                            del sample
+                        except Exception:
+                            pass
+                        torch.cuda.empty_cache()
 
-                    sequences = tokenizer.batch_decode(sample)
-                    
+                    # Synchronize ranks before any collectives that follow
+                    dist.barrier()
+
+                    # Report per-rank success to rank 0
+                    success_list = [torch.zeros_like(success) for _ in range(world_size)]
+                    dist.all_gather(success_list, success)
                     if rank == 0:
-                        sequences_list = [[None for i in sequences] for _ in range(world_size)]
-                        label_list = [torch.zeros_like(sampling_label) for _ in range(world_size)]
-                        cfg_w_list = [torch.zeros_like(sampling_cfg_w) for _ in range(world_size)]
+                        statuses = [int(s.item()) for s in success_list]
+                        mprint(f"Generation success per rank: {statuses}")
+
+                    # Gather error messages (strings) to rank 0 for visibility
+                    err_list = [None for _ in range(world_size)] if rank == 0 else None
+                    if cpu_pg is not None:
+                        dist.gather_object(err_msg, err_list, dst=0, group=cpu_pg)
                     else:
-                        sequences_list = None
-                        label_list = None
-                        cfg_w_list = None
-                    
-                    # gather the samples on rank 0
-                    dist.gather_object(sequences, sequences_list, dst=0)
-                    dist.gather(sampling_label, label_list, dst=0)
-                    dist.gather(sampling_cfg_w, cfg_w_list, dst=0)
-                    
+                        dist.gather_object(err_msg, err_list, dst=0)
+                    if rank == 0 and any(s.item() == 0 for s in success_list):
+                        for r, s in enumerate(success_list):
+                            if int(s.item()) == 0:
+                                mprint(f"[rank {r}] generation failed: {err_list[r] if err_list else 'no message'}")
 
-                    if rank == 0:
-                        gathered_sequences = list(chain(*sequences_list))
-                        sampling_label = torch.cat(label_list)
-                        sampling_cfg_w = torch.cat(cfg_w_list)
-                        if config.wandb.use_wandb:
-                            current_table = wandb.Table(columns=global_table.columns, data=global_table.data) # workaround
+                    # Determine if all ranks succeeded
+                    all_ok = torch.tensor(1 if all(int(s.item()) == 1 for s in success_list) else 0,
+                                          device=device, dtype=torch.int32)
+                    # Broadcast single flag from rank 0 to keep branches aligned
+                    dist.broadcast(all_ok, src=0)
+
+                    if all_ok.item() == 1:
+                        if rank == 0:
+                            sequences_list = [[None for _ in sequences] for _ in range(world_size)]
+                            # Allocate CPU tensors for gather (assume tensors)
+                            label_list = [torch.zeros_like(sampling_label_cpu, device='cpu') for _ in range(world_size)]
+                            cfg_w_list = [torch.zeros_like(sampling_cfg_w_cpu, device='cpu') for _ in range(world_size)]
                         else:
-                            current_table = None
-                        steps = config.sampling.steps
+                            sequences_list = None
+                            label_list = None
+                            cfg_w_list = None
 
-                        file_name = os.path.join(this_sample_dir, f"samples.txt")
-                        
-                        sampling.write_samples(file_name, gathered_sequences, sampling_label, sampling_cfg_w, steps, name='sample', use_wandb=config.wandb.use_wandb, current_table=current_table)
-                        mprint(f"Samples saved at step: {step}.")
+                        # gather the samples on rank 0 using CPU/Gloo group when available
+                        if cpu_pg is not None:
+                            dist.gather_object(sequences, sequences_list, dst=0, group=cpu_pg)
+                        else:
+                            dist.gather_object(sequences, sequences_list, dst=0)
 
-                        if config.wandb.use_wandb:
-                            run.log({"samples": current_table}, step=step)
-                            global_table = current_table # workaround
+                        # Gather CPU tensors (labels)
+                        if cpu_pg is not None:
+                            dist.gather(sampling_label_cpu, label_list, dst=0, group=cpu_pg)
+                        else:
+                            dist.gather(sampling_label_cpu, label_list, dst=0)
 
-                    if config.eval.perplexity and step != 0:
-                        perplexity = calculate_perplexity(config, sequences, device, world_size)
-                        mprint(f"Generative Perplexity at step: {step}. Perplexity: {perplexity:.3f}.")
-                        mlog({"generative_perplexity": perplexity.item()}, step=step)
+                        # Gather CPU tensors (cfg_w)
+                        if cpu_pg is not None:
+                            dist.gather(sampling_cfg_w_cpu, cfg_w_list, dst=0, group=cpu_pg)
+                        else:
+                            dist.gather(sampling_cfg_w_cpu, cfg_w_list, dst=0)
+
+                        if rank == 0:
+                            gathered_sequences = list(chain(*sequences_list))
+                            # Concatenate CPU tensors
+                            sampling_label = torch.cat(label_list)
+                            sampling_cfg_w = torch.cat(cfg_w_list)
+                            if config.wandb.use_wandb:
+                                current_table = wandb.Table(columns=global_table.columns, data=global_table.data) # workaround
+                            else:
+                                current_table = None
+                            steps = config.sampling.steps
+
+                            file_name = os.path.join(this_sample_dir, f"samples.txt")
+                            
+                            sampling.write_samples(file_name, gathered_sequences, sampling_label, sampling_cfg_w, steps, name='sample', use_wandb=config.wandb.use_wandb, current_table=current_table)
+                            mprint(f"Samples saved at step: {step}.")
+
+                            if config.wandb.use_wandb:
+                                run.log({"samples": current_table}, step=step)
+                                global_table = current_table # workaround
+
+                        # Only compute perplexity if generation succeeded on all ranks
+                        if config.eval.perplexity and step != 0:
+                            perplexity = calculate_perplexity(config, sequences, device, world_size)
+                            mprint(f"Generative Perplexity at step: {step}. Perplexity: {perplexity:.3f}.")
+                            mlog({"generative_perplexity": perplexity.item()}, step=step)
+                    else:
+                        mprint("Skipping sample gather due to generation failure on some rank(s).")
 
                     dist.barrier()
 
