@@ -1,8 +1,11 @@
+
+![Axolotl](/axolotl/axolotl.gif)
+
 ### Axolotl
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-This repo contains the source code for axolotl - a protein diffusion model based on score entropy discrete diffusion
+This repo contains the source code for axolotl - a diffusion protein language model based on masked discrete diffusion for discrete data (MD4)
 
 
 ### Installation
@@ -38,7 +41,7 @@ python sample_cond.py --length LENGTH --input INPUT --input_locations INPUT_LOCA
 
 ### Observations
 
-- at about cfg_w of 5, the model starts outputting very similar sequences. Makes sense, it is also seen in images as a tradeoff between IS and FID
+- At about cfg_w of 5, the model starts outputting very similar sequences. Makes sense, it is also seen in images as a tradeoff between IS and FID
 
 
 ### Folding using chai-1 or boltz-1
