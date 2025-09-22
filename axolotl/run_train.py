@@ -187,7 +187,7 @@ def _run(rank, world_size, config):
                                              seed=42,
                                              epoch=initial_step, # use the initial step as epoch, to make the dataloader shuffle on restart
                                              shuffle_each_epoch=True,
-                                             use_unclustered_dataset=config.data.use_unclustered_dataset or False,
+                                             use_unclustered_dataset=getattr(config.data, 'use_unclustered_dataset', False)
     )
 
     # mprint(f"Length of datasets: {len(train_ds)}, {len(eval_ds)}")
