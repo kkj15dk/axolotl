@@ -310,8 +310,10 @@ def get_pc_sampler(graph,
             input_label = torch.ones(batch_size, device=device, dtype=torch.long)
         elif label == 'archeal': # archeal = 2
             input_label = torch.full((batch_size,), 2, device=device, dtype=torch.long)
-        elif label == 'random' or label is None:
-            input_label = torch.randint(0, num_labels, (batch_size,), device=device, dtype=torch.long)
+        elif label is None: # None = 3
+            input_label = torch.full((batch_size,), 3, device=device, dtype=torch.long)
+        elif label == 'random':
+            input_label = torch.randint(0, 1 + num_labels, (batch_size,), device=device, dtype=torch.long)
         else:
             raise ValueError(f"Invalid label: {label}")
         
