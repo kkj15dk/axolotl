@@ -44,6 +44,7 @@ def sample(model_path: str,
            output_x0_predictions: bool = False,
            output_intermediates: bool = False,
            make_x0_gif: bool = False,
+           num_processes_gif: int = 4
 ):
     if make_x0_gif and not output_x0_predictions:
         raise ValueError("If you want to make a GIF of x0 predictions, you need to set output_x0_predictions=True")
@@ -85,7 +86,7 @@ def sample(model_path: str,
     if make_x0_gif and x0_predictions is not None:
         x0_predictions_tensor = torch.stack(x0_predictions, dim=0).cpu().permute(1,0,3,2).numpy()
         for i, giftensor in enumerate(x0_predictions_tensor):
-            plot_sequence_logo_and_create_gif(giftensor, positions_per_line=64, ylim=(0, 1), dpi=100, output_gif_path=f"{output.replace('.txt', f'_x0_predictions_{i}.gif')}", png_dir="sequence_logo_pngs", num_processes=10)
+            plot_sequence_logo_and_create_gif(giftensor, positions_per_line=64, ylim=(0, 1), dpi=100, output_gif_path=f"{output.replace('.txt', f'_x0_predictions_{i}.gif')}", png_dir=f"{output.replace('.txt', '_sequence_logo_pngs')}", num_processes=num_processes_gif)
 
     if intermediates is not None:
         intermediates_outfile = output.replace(".txt", "_intermediates.txt")
