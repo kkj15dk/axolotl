@@ -27,6 +27,8 @@ def get_args():
     parser.add_argument("--output_x0_predictions", type=bool, default=True, help="Whether to output x0 predictions")
     parser.add_argument("--output_intermediates", type=bool, default=True, help="Whether to output intermediate samples")
     parser.add_argument("--make_x0_gif", type=bool, default=True, help="Whether to make a GIF of x0 predictions")
+    parser.add_argument("--num_processes_gif", type=int, default=4, help="Number of processes to use for making GIFs")
+    parser.add_argument("--print_every_n", type=int, default=1, help="Print every n sequences when making GIFs")
     args = parser.parse_args()
     return args
 
@@ -44,7 +46,8 @@ def sample(model_path: str,
            output_x0_predictions: bool = False,
            output_intermediates: bool = False,
            make_x0_gif: bool = False,
-           num_processes_gif: int = 4
+           num_processes_gif: int = 4,
+           print_every_n: int = 1
 ):
     if make_x0_gif and not output_x0_predictions:
         raise ValueError("If you want to make a GIF of x0 predictions, you need to set output_x0_predictions=True")
@@ -86,7 +89,15 @@ def sample(model_path: str,
     if make_x0_gif and x0_predictions is not None:
         x0_predictions_tensor = torch.stack(x0_predictions, dim=0).cpu().permute(1,0,3,2).numpy()
         for i, giftensor in enumerate(x0_predictions_tensor):
-            plot_sequence_logo_and_create_gif(giftensor, positions_per_line=64, ylim=(0, 1), dpi=100, output_gif_path=f"{output.replace('.txt', f'_x0_predictions_{i}.gif')}", png_dir=f"{output.replace('.txt', '_sequence_logo_pngs')}", num_processes=num_processes_gif)
+            plot_sequence_logo_and_create_gif(giftensor, 
+            positions_per_line=64, 
+            ylim=(0, 1), 
+            dpi=100, 
+            output_gif_path=f"{output.replace('.txt', f'_x0_predictions_{i}.gif')}", 
+            png_dir=f"{output.replace('.txt', '_sequence_logo_pngs')}", 
+            num_processes=num_processes_gif,
+            print_every_n=print_every_n,
+            )
 
     if intermediates is not None:
         intermediates_outfile = output.replace(".txt", "_intermediates.txt")
@@ -99,17 +110,19 @@ if __name__=="__main__":
     tokenizer = PreTrainedTokenizerFast.from_pretrained('/home/kkj/axolotl/tokenizer/tokenizer_absorb')
 
     sample(model_path=args.model_path,
-           tokenizer=tokenizer,
-           batch_size=args.batch_size,
-           length=args.length,
-           steps=args.steps,
-           predictor=args.predictor,
-           denoise=args.denoise,
-           cfg_w=args.cfg_w,
-           label=args.label,
-           output=args.output,
-           name=args.name,
-           output_x0_predictions=args.output_x0_predictions,
-           output_intermediates=args.output_intermediates,
-           make_x0_gif=args.make_x0_gif,
+            tokenizer=tokenizer,
+            batch_size=args.batch_size,
+            length=args.length,
+            steps=args.steps,
+            predictor=args.predictor,
+            denoise=args.denoise,
+            cfg_w=args.cfg_w,
+            label=args.label,
+            output=args.output,
+            name=args.name,
+            output_x0_predictions=args.output_x0_predictions,
+            output_intermediates=args.output_intermediates,
+            make_x0_gif=args.make_x0_gif,
+            num_processes_gif=args.num_processes_gif,
+            print_every_n=args.print_every_n
     )

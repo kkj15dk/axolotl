@@ -66,7 +66,7 @@ def save_logo_plot(array, label:str, png_dir_str:str, positions_per_line:int, wi
     
     return png_path
 
-def plot_sequence_logo_and_create_gif(tensor_cpu_numpy, positions_per_line, ylim = (-1,3), dpi = 100, characters="ACDEFGHIKLMNPQRSTVWY?[]-", output_gif_path="sequence_logos.gif", png_dir = "sequence_logo_pngs", num_processes = 10):
+def plot_sequence_logo_and_create_gif(tensor_cpu_numpy, positions_per_line, ylim = (-1,3), dpi = 100, characters="ACDEFGHIKLMNPQRSTVWY?[]-", output_gif_path="sequence_logos.gif", png_dir = "sequence_logo_pngs", num_processes = 10, print_every_n=1):
 
     """
     Plots sequence logos from a tensor and creates a GIF from the saved PNG files.
@@ -82,7 +82,8 @@ def plot_sequence_logo_and_create_gif(tensor_cpu_numpy, positions_per_line, ylim
         # Prepare the arguments for each function call
         def args_generator():
             for idx, array in enumerate(tensor_cpu_numpy):
-                yield (array, idx, str(png_dir), positions_per_line, positions_per_line, ylim, dpi, characters)
+                if (idx % print_every_n == 0) or (idx == tensor_cpu_numpy.shape[0] - 1):
+                    yield (array, idx, str(png_dir), positions_per_line, positions_per_line, ylim, dpi, characters)
 
         # Use map to apply the function to the arguments in parallel
         png_files = pool.map(save_logo_plot_wrapper, args_generator())
